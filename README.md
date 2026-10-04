@@ -41,6 +41,8 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
+FitFindr takes a request like `vintage graphic tee under $30` and pulls a description, a size, and a price limit out of it. It searches 40 mock listings, picks the best keyword match, and asks a model for an outfit from the user's wardrobe (or general advice if the wardrobe is empty) and a short caption. If nothing matches, it stops before any model call and says what to change.
+
 ---
 
 ## Tool Inventory
@@ -95,9 +97,9 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex, in `agent.py::parse_query`. One set of patterns finds a price limit ("under $30", "$30", "30 or less"), another finds a size after the word "size", and what is left is the description.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query`, then `parsed`, `search_results`, `selected_item`, `outfit_suggestion`, and `fit_card`, each written by one step and read by the next. `wardrobe` is set at the start, and `error` is set only when the search finds nothing.
 
 ---
 
@@ -111,8 +113,17 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Outfit one plays with proportions by pairing the baby tee with your baggy straight-leg jeans. Add the black cropped zip hoodie layered over or carried along, and finish with your chunky white sneakers and black crossbody bag for an effortless Y2K streetwear look.
+
+Outfit two leans into a vintage contrast. Tuck the baby tee into your wide-leg khaki trousers, and pull on the vintage black denim jacket. Complete this earthy, retro combination with your black combat boots and the brown leather belt to tie the whole aesthetic together seamlessly.
+
+  Fit card: I scored this adorable Y2K butterfly print baby tee on depop for only $18 and I am completely obsessed with it. I am styling it two ways, first with baggy straight-leg jeans and a cropped black hoodie for the ultimate effortless streetwear vibe. For my second look, I am leaning into a retro contrast by tucking it into wide-leg khaki trousers with a vintage black denim jacket and combat boots.
+
+0 model calls this session, 2 served from cache
 ```
 
 **The three tools, tested one at a time**
@@ -150,15 +161,15 @@ I finally scored the vintage Levi's 501 jeans of my dreams on depop for just $38
 
 **Moment 1**
 
-- _What I asked for:_
-- _What came back:_
-- _What I changed:_
+- _What I asked for:_ I asked Claude to build `suggest_outfit` from my Tool Inventory entry and its docstring.
+- _What came back:_ When the model sent back empty text, the tool returned the sentence "The model returned no outfit for <title>. Try it again." A second model's review pointed out that `create_fit_card` would caption that sentence as if it were an outfit.
+- _What I changed:_ Both model tools now raise `ModelUnavailable` on an empty reply, and the Tool Inventory says so.
 
 **Moment 2**
 
-- _What I asked for:_
-- _What came back:_
-- _What I changed:_
+- _What I asked for:_ I asked Claude to build `create_fit_card` and, as the assignment says, run it three times on one item with the cache off.
+- _What came back:_ Three different captions for the $38 Levi's, with the price as "thirty-eight dollars", "thirty eight dollars", and "38 dollars". A search for `$38` finds none of them. An earlier try also read like a seller's post.
+- _What I changed:_ The prompt now says to write as the buyer and to put the price in digits. Five more tries each had `$38` once.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
