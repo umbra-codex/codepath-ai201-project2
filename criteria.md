@@ -78,8 +78,8 @@ the listed item — in at least 4 of 5 tries.
 
 **Why this target:**
 With no wardrobe items in the prompt, the model can still write "your jeans" as
-if it had seen a closet. One slip in five is the model; more than that is my
-empty-wardrobe prompt.
+if it had seen a closet. I allow one slip in five. If it happens more often, my
+empty-wardrobe prompt is the problem.
 
 
 ---
