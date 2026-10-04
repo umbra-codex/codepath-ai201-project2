@@ -25,9 +25,9 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+My search is a plain keyword match, so the same query finds the same item every
+try. The two tools after it call the model, and one failed call ends the run
+without a fit card, so I allow one miss in five.
 
 ---
 
@@ -37,65 +37,49 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path never reaches the model. The search is a filter and a keyword count,
+so an empty result is empty on every try and the branch has no reason to vary.
 
 ---
 
-## 3. Something about state
+## 3. The selected item is the item the next two tools receive
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+Given a query that matches at least one listing, the item the trace shows going
+into `suggest_outfit` and `create_fit_card` has the same title as
+`session["selected_item"]` — 5 of 5 tries.
 
 **Why this target:**
-
+No model call sits between the search and the handoff, so it either holds on
+every try or fails on every try. All 40 listing titles are unique, so a matching
+title means the same listing.
 
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card names the price and the platform once each
 
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
+Given a query that matches at least one listing, the fit card names the
+selected item's price and its platform exactly once each — in at least 4 of 5
+tries.
 
 **Why this target:**
-
+The card is raw model text at `TEMPERATURE` 0.9, and `create_fit_card` returns
+it unchecked, so the model can drop a fact the prompt gave it or repeat one. One
+miss in five is variation; two means my prompt isn't asking clearly enough.
 
 
 ---
 
-## 5. Your choice
+## 5. An empty wardrobe gets general advice, not invented pieces
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+Given a matching query and an empty wardrobe, the agent returns a fit card, and
+the outfit suggestion never uses "your" or "you own" for any piece other than
+the listed item — in at least 4 of 5 tries.
 
 **Why this target:**
-
+With no wardrobe items in the prompt, the model can still write "your jeans" as
+if it had seen a closet. One slip in five is the model; more than that is my
+empty-wardrobe prompt.
 
 
 ---
