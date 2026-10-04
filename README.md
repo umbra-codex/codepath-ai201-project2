@@ -41,8 +41,6 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
-
-
 ---
 
 ## Tool Inventory
@@ -60,22 +58,22 @@
 ### `search_listings`
 
 - **What it does:** Filters listings by price and size, drops any that share no keyword with the description, and ranks the rest by keyword overlap.
-- **Inputs:** `description` (str); `size` (str or None), a case-insensitive whole-token match, so `m` matches `S/M` but not `XL`, and a `One Size` listing matches any requested size. Tokens are the parts of a listing's size split on `/`, with text in parentheses removed, so `XL (oversized)` is `XL` and `US 8` needs the full `US 8`; `max_price` (float or None), inclusive. `None` skips that filter.
-- **Returns:** A list of up to 10 listing dicts, highest score first, ties in data order. Keywords are lowercase words minus stop words. A listing's keywords come from its `title`, `description`, `category`, `style_tags`, `colors`, and `brand`, and its score is the number it shares with the query. Each has `id`, `title`, `description`, `category`, `size`, `condition`, `platform` (all str), `price` (float), `style_tags` and `colors` (lists of str), and `brand` (str or None).
+- **Inputs:** `description` (str); `size` (str or None), a case-insensitive whole-token match, so `m` matches `S/M` but not `XL`, and a `One Size` listing matches any requested size. Tokens are the parts of a listing's size split on `/`, with text in parentheses removed, so `XL (oversized)` is `XL` and `US 8` needs the full `US 8`. A waist-and-length size is one token too, so `W30 L30` needs the full `W30 L30` and `W30` alone does not match it; `max_price` (float or None), inclusive. `None` skips that filter.
+- **Returns:** A list of up to 10 listing dicts, highest score first, ties in data order. Keywords are lowercase words of two or more characters, minus stop words. A listing's keywords come from its `title`, `description`, `category`, `style_tags`, `colors`, and `brand`, and its score is the number it shares with the query. Each has `id`, `title`, `description`, `category`, `size`, `condition`, `platform` (all str), `price` (float), `style_tags` and `colors` (lists of str), and `brand` (str or None).
 - **When it has nothing:** An empty list, `[]`.
 
 ### `suggest_outfit`
 
 - **What it does:** Asks the model for one or two outfits that pair a listing with the user's wardrobe.
 - **Inputs:** `new_item` (dict), one listing; `wardrobe` (dict), whose `items` key is a list of dicts with `id`, `name`, `category`, `colors`, `style_tags`, and optional `notes`. A missing `items` key counts as empty.
-- **Returns:** A non-empty string describing one or two outfits that name wardrobe pieces.
+- **Returns:** When the wardrobe has items, a non-empty string describing one or two outfits that name wardrobe pieces. Raises `ModelUnavailable` if the model returns no text.
 - **When it has nothing:** With an empty wardrobe, a non-empty string of general styling advice that names no wardrobe pieces.
 
 ### `create_fit_card`
 
 - **What it does:** Asks the model for a short caption about the item and the outfit.
 - **Inputs:** `outfit` (str), the text from `suggest_outfit`; `new_item` (dict), the same listing.
-- **Returns:** A string of two to four sentences that mentions the item, its price, and its platform once each.
+- **Returns:** A string of two to four sentences that mentions the item, its price, and its platform once each. Raises `ModelUnavailable` if the model returns no text.
 - **When it has nothing:** If `outfit` is empty or whitespace, the string `"No outfit to write a fit card for."`, with no model call.
 
 ---
@@ -120,18 +118,23 @@ $ python app.py ask '...'
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+$ AI201_CACHE=0 python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
 
+[{'id': 'lst_002', 'title': 'Y2K Baby Tee — Butterfly Print', 'description': 'Super cute early 2000s baby tee with butterfly graphic. Fitted crop length. Tag says medium but fits like a small.', 'category': 'tops', 'style_tags': ['y2k', 'vintage', 'graphic tee', 'cottagecore'], 'size': 'S/M', 'condition': 'excellent', 'price': 18.0, 'colors': ['white', 'pink', 'purple'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_006', 'title': 'Graphic Tee — 2003 Tour Bootleg Style', 'description': 'Vintage-style bootleg tee with faded graphic. Slightly boxy fit. 100% cotton, soft and worn-in.', 'category': 'tops', 'style_tags': ['graphic tee', 'vintage', 'grunge', 'streetwear', 'band tee'], 'size': 'L', 'condition': 'good', 'price': 24.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_017', 'title': 'Mesh Long-Sleeve Top — Black', 'description': 'Sheer black mesh long-sleeve. Great for layering under a graphic tee or over a bralette. Stretchy material, fits true to size.', 'category': 'tops', 'style_tags': ['y2k', 'grunge', 'goth', 'layering'], 'size': 'S/M', 'condition': 'excellent', 'price': 15.0, 'colors': ['black'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_033', 'title': 'Vintage Band Tee — Faded Grey', 'description': 'Faded grey band-style tee with distressed graphic. Crew neck. Fits boxy. Well-loved but no holes or major damage.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'band tee', 'graphic tee', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 19.0, 'colors': ['grey', 'charcoal'], 'brand': None, 'platform': 'depop'}, {'id': 'lst_011', 'title': 'Low-Rise Cargo Pants — Khaki', 'description': 'Y2K era low-rise cargo pants. Lots of pockets. Khaki color, slightly distressed at the hems. Great for layering with a long tee.', 'category': 'bottoms', 'style_tags': ['y2k', 'cargo', '2000s', 'streetwear'], 'size': 'W29', 'condition': 'fair', 'price': 27.0, 'colors': ['khaki', 'tan'], 'brand': None, 'platform': 'poshmark'}, {'id': 'lst_015', 'title': 'Vintage Graphic Hoodie — Faded Black', 'description': 'Faded black pullover hoodie with barely-visible vintage graphic on the chest. Cozy interior. Some pilling but adds to the worn-in look.', 'category': 'tops', 'style_tags': ['vintage', 'grunge', 'graphic', 'streetwear'], 'size': 'L', 'condition': 'fair', 'price': 26.0, 'colors': ['black', 'charcoal'], 'brand': None, 'platform': 'depop'}]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ AI201_CACHE=0 python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
 
+Outfit one: Pair the vintage Levi's 501 jeans with the white ribbed tank top tucked in. Layer the oversized grey crewneck sweatshirt over top, and finish the look with the chunky white sneakers and the black crossbody bag.
+
+Outfit two: Style the jeans with the black cropped zip hoodie and the black combat boots. Cinch the waist using the brown leather belt, and throw on the vintage black denim jacket as your outerwear layer.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
 
+I finally scored the vintage Levi's 501 jeans of my dreams on depop for just $38. The medium indigo wash has that perfectly broken-in denim look that makes any outfit instantly cooler. I am styling them with crisp white sneakers for the ultimate effortless streetwear vibe.
 ```
 
 ---
@@ -147,15 +150,15 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- _What I asked for:_
+- _What came back:_
+- _What I changed:_
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- _What I asked for:_
+- _What came back:_
+- _What I changed:_
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
@@ -176,12 +179,12 @@ $ python -c "from tools import create_fit_card; ..."
      into results/. Paste it here and fill in the verdicts. -->
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
+| 1.        |        |       |       |       |       |       |         |
+| 2.        |        |       |       |       |       |       |         |
+| 3.        |        |       |       |       |       |       |         |
+| 4.        |        |       |       |       |       |       |         |
+| 5.        |        |       |       |       |       |       |         |
 
 **Real output from one try**, pasted as text, naming the file and function
 that produced it:
@@ -210,17 +213,15 @@ that produced it:
      Look for a pattern. Three misses on the same tool is one problem, not
      three. -->
 
-| # | Criterion | Target | Verdict | How I decided |
-|---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| #   | Criterion | Target | Verdict | How I decided |
+| --- | --------- | ------ | ------- | ------------- |
+| 1   |           |        |         |               |
+| 2   |           |        |         |               |
+| 3   |           |        |         |               |
+| 4   |           |        |         |               |
+| 5   |           |        |         |               |
 
 **Diagnoses**
-
-
 
 ---
 
@@ -253,8 +254,6 @@ behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
 
-
-
 ---
 
 ## The Improvement
@@ -271,19 +270,17 @@ full. -->
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
+| 1.        |        |       |       |       |       |       |         |
+| 2.        |        |       |       |       |       |       |         |
+| 3.        |        |       |       |       |       |       |         |
+| 4.        |        |       |       |       |       |       |         |
+| 5.        |        |       |       |       |       |       |         |
 
 **Did it help, and how do I know:**
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
-
-
 
 ---
 
@@ -292,8 +289,6 @@ full. -->
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
-
-
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
