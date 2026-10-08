@@ -53,6 +53,19 @@ No model call sits between the search and the handoff, so it either holds on
 every try or fails on every try. All 40 listing titles are unique, so a matching
 title means the same listing.
 
+> **Revised in unit 4:** Given a query that matches at least one listing, the
+> `new_item` that `suggest_outfit` and `create_fit_card` are each called with
+> has the same `id` as `session["selected_item"]` in the returned session, and
+> that `id` is the first search result's, in 5 of 5 tries. `check_handoff.py`
+> records the argument at each call and scores it.
+>
+> **Why revised:** The original measured the loop's report of the handoff, not
+> the handoff. My trace line and the tool call read the same variable, so the
+> check trusted `run_agent` to print what it passes. It also never checked that
+> the selected item was the first search result. The new version records what
+> each tool received, in code the loop does not own, and compares it with the
+> session and the search results after the run. I broke the loop three ways to
+> test it, and each one failed 5 of 5.
 
 ---
 

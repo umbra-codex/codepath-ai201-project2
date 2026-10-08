@@ -201,7 +201,7 @@ The full log is `results/run_2026-10-07_2101_before.md`, written by `run_eval.py
 
 Criterion 5, try 4 is the one FAIL. Its outfit ends with "any pattern or neutral basic in your rotation". "Your" there points at clothes the agent was never shown, so I counted it. It names no single piece, and a looser reading would pass it.
 
-Criterion 3 passed every try, but it could not have failed. The trace prints the title from the same object `run_agent` hands to each tool, so the two only differ if the loop's code changes.
+Criterion 3 passed every try, but the check is weak. The trace prints the title from the same object `run_agent` hands to each tool, so it shows what the loop says it passed, and the two only differ if the loop's code changes.
 
 **Real output from one try per criterion**, copied from that log. Every trace is printed by `agent.py::run_agent`, the outfit text comes from `tools.py::suggest_outfit`, and the fit card comes from `tools.py::create_fit_card`.
 
@@ -309,13 +309,52 @@ I just scored this amazing vintage cropped Wrangler denim jacket on poshmark for
 
 | #   | Criterion | Target | Verdict | How I decided |
 | --- | --------- | ------ | ------- | ------------- |
-| 1   |           |        |         |               |
-| 2   |           |        |         |               |
-| 3   |           |        |         |               |
-| 4   |           |        |         |               |
-| 5   |           |        |         |               |
+| 1   | A matching query completes all three tools | 4 of 5 | MET (5/5) | Each try's trace has all three steps and the session has a fit card. |
+| 2   | An impossible query stops before the second tool | 5 of 5 | MET (5/5) | Each trace has only the search step, there is no outfit or fit card, and the message says to drop the size, raise the price limit, or reword. |
+| 3   | The selected item is the item the next two tools receive | 5 of 5 | MET (5/5), revised | Both `new_item` titles in each trace equal the selected item's title. That check trusts the loop's own trace, so I revised the criterion. The revised version also passes 5 of 5. |
+| 4   | The fit card names the price and the platform once each | 4 of 5 | MET (5/5) | I counted `$30` and `depop` in each of the five cards. Each appears once. |
+| 5   | An empty wardrobe gets general advice, not invented pieces | 4 of 5 | MET (4/5) | All five tries returned a fit card. I read each outfit for "your" and "you own". Try 4 has "in your rotation". |
 
 **Diagnoses**
+
+I missed nothing. All five criteria met their unit 3 targets, and one try out of 25 failed.
+
+**The one failed try (criterion 5, try 4):** the place is the model's output from `tools.py::suggest_outfit`. My empty-wardrobe prompt says: `Do not describe any other piece as theirs: introduce each one with "a" or "an", never "your".` For named pieces the rule held. None is called "your" in any of the five tries. The slip is in the last sentence of try 4: "easy to mix and match with almost any pattern or neutral basic in your rotation". The rule covers that sentence, because it describes other pieces as the reader's. But the rule's only concrete instruction is about introducing a piece with "a" or "an", and this sentence introduces none, so the model had the ban with nothing it could apply. The tool and the loop worked.
+
+**The pattern:** one failed try is too few to call a pattern in the failures. What the log does show is how often the model reaches for "your" when it is allowed. In the example-wardrobe outfits that is 5 of 5 for the tee, 5 of 5 for the slip dress, and 1 of 5 for the track jacket. The habit is strong for some items and weak for others, and the empty-wardrobe prompt's 1 of 5 is no better than the track jacket's rate with no ban at all. Five tries can't tell me how much the ban is doing.
+
+**On my targets:** criterion 3 was weaker than its 5 of 5 target looks. The trace is `run_agent`'s own report. The trace line and the tool call read the same variable, so the check trusts the loop to print what it passes. I revised it in `criteria.md` and scored the new version below. Criterion 2 passed 5 of 5 against a 5 of 5 target and has no model call in its path, so that target was right. Criterion 5 used the one miss its 4 of 5 target allows, on a call a looser reader would pass, so I would leave that target where it is. Criteria 1 and 4 allowed one miss in five and used none. The criterion I'd tighten is 4. All 20 fit cards in this run, from four different items, name the price once and the platform once, so I would hold it to 5 of 5. That has a cost: a failed model call would then miss criteria 1 and 4 together.
+
+**Criterion 3, revised and scored:** `check_handoff.py::main` replaces the two model tools with stand-ins that record the `new_item` they are called with, runs `agent.py::run_agent`, and compares each recorded `id` with `session["selected_item"]` and with the first search result. It makes no model calls.
+
+```
+$ python check_handoff.py
+query: 90s track jacket in size M
+  try 1: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_004  PASS
+  try 2: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_004  PASS
+  try 3: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_004  PASS
+  try 4: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_004  PASS
+  try 5: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_004  PASS
+5 of 5 passed
+```
+
+To see whether the check can fail, I broke `run_agent` three ways, one line at a time. I ran the check after each break and put the line back. All three failed 5 of 5. This is the first try and the total from each run:
+
+```
+suggest_outfit gets the second search result
+  try 1: first result lst_004, session has lst_004, suggest_outfit got lst_022, create_fit_card got lst_004  FAIL
+0 of 5 passed
+
+create_fit_card gets the second search result
+  try 1: first result lst_004, session has lst_004, suggest_outfit got lst_004, create_fit_card got lst_022  FAIL
+0 of 5 passed
+
+the session selects the second search result
+  try 1: first result lst_004, session has lst_022, suggest_outfit got lst_022, create_fit_card got lst_022  FAIL
+0 of 5 passed
+```
+
+The check has limits. It only looks at `new_item`, so a wrong wardrobe or outfit argument would get past it, and so would a tool that ignored the item it was given.
 
 ---
 
