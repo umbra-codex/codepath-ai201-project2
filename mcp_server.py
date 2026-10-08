@@ -59,6 +59,7 @@ works with a direct call, and **a documented failure earns the point in full.**
 
 from mcp.server.fastmcp import FastMCP
 
+from tools import create_fit_card as _create_fit_card_impl
 from tools import search_listings as _search_listings_impl
 
 # log_level="WARNING" keeps the server from printing an INFO line for every
@@ -81,6 +82,21 @@ def search_listings(
     empty list when nothing matches.
     """
     return _search_listings_impl(description, size, max_price)
+
+
+@mcp.tool()
+def create_fit_card(outfit: str, new_item: dict) -> str:
+    """
+    Write a two-to-four sentence first-person caption for a thrift find, as
+    plain text. outfit is the outfit suggestion to write about. new_item is one
+    listing dict as returned by search_listings: it needs title, category,
+    colors, style_tags, size, price (a number, in US dollars) and platform, and
+    brand may be null. If outfit is empty or only whitespace, returns the string
+    "No outfit to write a fit card for." without calling a model. Otherwise it
+    calls a language model, so the text can differ between calls with the same
+    inputs, and the call returns an error if the model can't be reached.
+    """
+    return _create_fit_card_impl(outfit, new_item)
 
 
 # Two notes on the block above.

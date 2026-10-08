@@ -28,8 +28,11 @@ right trade for one unit.
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
+
+import config
 
 SERVER = Path(__file__).parent / "mcp_server.py"
 
@@ -59,6 +62,15 @@ def call_tool(name: str, arguments: dict):
         return asyncio.run(_call(name, arguments))
     except MCPError:
         raise
+    except BaseExceptionGroup as group:
+        # An MCPError raised inside the client's task group arrives wrapped in
+        # a group, and the group's own text says nothing about the cause.
+        inner = _first_mcp_error(group)
+        if inner is not None:
+            raise inner from None
+        if not isinstance(group, ExceptionGroup):
+            raise  # Ctrl-C or a cancellation. Not this function's to rename.
+        raise MCPError(f"Couldn't call '{name}' over MCP: {group}") from group
     except Exception as exc:  # noqa: BLE001 — re-raised readably below
         raise MCPError(
             f"Couldn't call '{name}' over MCP: {exc}\n"
@@ -68,13 +80,33 @@ def call_tool(name: str, arguments: dict):
         ) from exc
 
 
+def _first_mcp_error(group: BaseExceptionGroup) -> "MCPError | None":
+    """Find the MCPError inside an exception group, however deep it sits."""
+    for exc in group.exceptions:
+        if isinstance(exc, MCPError):
+            return exc
+        if isinstance(exc, BaseExceptionGroup):
+            found = _first_mcp_error(exc)
+            if found is not None:
+                return found
+    return None
+
+
 async def _call(name: str, arguments: dict):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
+    # The server is a second Python process and by default it inherits almost
+    # none of this one's environment. A tool that calls the model needs the
+    # same key, model name and cache setting the caller is running with, or a
+    # cache-off eval would quietly cache on the server side. Only those three
+    # are passed.
+    env = {k: os.environ[k] for k in ("GEMINI_API_KEY", "AI201_MODEL") if k in os.environ}
+    env["AI201_CACHE"] = "1" if config.CACHE_ENABLED else "0"
     params = StdioServerParameters(
         command=sys.executable,
         args=[str(SERVER)],
+        env=env,
     )
 
     async with stdio_client(params) as (read, write):

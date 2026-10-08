@@ -17,8 +17,8 @@ import re
 
 import config
 import trace
-from mcp_client import call_tool
-from tools import suggest_outfit, create_fit_card
+from mcp_client import MCPError, call_tool
+from tools import suggest_outfit
 from generate import ModelUnavailable
 
 
@@ -143,6 +143,14 @@ def _model_down_message(step: str, exc: ModelUnavailable) -> str:
     )
 
 
+def _fit_card_down_message(exc: MCPError) -> str:
+    """Say that the last step failed on the MCP server, and pass on why."""
+    return (
+        f"The search and the outfit worked, but create_fit_card failed on the "
+        f"MCP server, so there is no fit card. {str(exc).splitlines()[0]}"
+    )
+
+
 # ── planning loop ─────────────────────────────────────────────────────────────
 
 def run_agent(query: str, wardrobe: dict) -> dict:
@@ -263,15 +271,21 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 f"new_item={item['title']}; "
                 f"outfit={session['outfit_suggestion'][:40]}…"
             )
+            # create_fit_card runs on the MCP server too. The model call happens
+            # in the server's process, so a failure there comes back as MCPError
+            # and not as ModelUnavailable.
             try:
-                session["fit_card"] = create_fit_card(
-                    session["outfit_suggestion"], item
-                )
-            except ModelUnavailable as exc:
-                session["error"] = _model_down_message(step, exc)
-                trace.step(step, inputs=inputs, note=f"ModelUnavailable, stopping: {exc}")
+                session["fit_card"] = call_tool("create_fit_card", {
+                    "outfit": session["outfit_suggestion"],
+                    "new_item": item,
+                })
+            except MCPError as exc:
+                session["error"] = _fit_card_down_message(exc)
+                trace.step("create_fit_card (via MCP)", inputs=inputs,
+                           note=f"MCPError, stopping: {str(exc).splitlines()[0]}")
             else:
-                trace.step(step, inputs=inputs, returned=session["fit_card"])
+                trace.step("create_fit_card (via MCP)", inputs=inputs,
+                           returned=session["fit_card"])
             step = None
 
     return session

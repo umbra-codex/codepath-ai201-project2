@@ -347,7 +347,7 @@ I missed nothing. All five criteria met their unit 3 targets, and one try out of
 
 **On my targets:** criterion 3 was weaker than its 5 of 5 target looks. The trace is `run_agent`'s own report. The trace line and the tool call read the same variable, so the check trusts the loop to print what it passes. I revised it in `criteria.md` and scored the new version below. Criterion 2 passed 5 of 5 against a 5 of 5 target and has no model call in its path, so that target was right. Criterion 5 used the one miss its 4 of 5 target allows, on a call a looser reader would pass, so I would leave that target where it is. Criteria 1 and 4 allowed one miss in five and used none. The criterion I'd tighten is 4. All 20 fit cards in this run, from four different items, name the price once and the platform once, so I would hold it to 5 of 5. That has a cost: a failed model call would then miss criteria 1 and 4 together.
 
-**Criterion 3, revised and scored:** `check_handoff.py::main` replaces the two model tools with stand-ins that record the `new_item` they are called with, runs `agent.py::run_agent`, and compares each recorded `id` with `session["selected_item"]` and with the first search result. It makes no model calls.
+**Criterion 3, revised and scored:** `check_handoff.py::main` replaces the two model tools with stand-ins that record the `new_item` they are called with, runs `agent.py::run_agent`, and compares each recorded `id` with `session["selected_item"]` and with the first search result. It makes no model calls. Since the stretch move, the `create_fit_card` stand-in sits in front of `call_tool`.
 
 ```
 $ python check_handoff.py
@@ -432,7 +432,7 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
 0 model calls this session
 ```
 
-**On the MCP move:** `search_listings` is registered in `mcp_server.py` under the same name, with the three typed inputs from my Tool Inventory. In `agent.py::run_agent`, the direct call `search_listings(description, size, max_price)` became `call_tool("search_listings", {...})` from `mcp_client.py`, and `agent.py` no longer imports the function. `suggest_outfit` and `create_fit_card` are still direct calls. I compared the direct call and the MCP call on the six example queries and ten edge cases, among them no filters, size only, the price ceiling, a One Size listing, and an empty description. Values and types matched every time, including the empty list for the ballgown query, so nothing in the loop's branch had to change. The one difference is speed: each MCP call starts the server as a second Python process and takes between half a second and a second, where the direct call was instant. The move also added a way to fail that the direct call didn't have. If the server can't start, `call_tool` raises `MCPError`, and `run_agent` does not catch it.
+**On the MCP move:** `search_listings` is registered in `mcp_server.py` under the same name, with the three typed inputs from my Tool Inventory. In `agent.py::run_agent`, the direct call `search_listings(description, size, max_price)` became `call_tool("search_listings", {...})` from `mcp_client.py`, and `agent.py` no longer imports the function. `suggest_outfit` and `create_fit_card` stayed direct calls in this milestone. `create_fit_card` moved later, under Stretch Features. I compared the direct call and the MCP call on the six example queries and ten edge cases, among them no filters, size only, the price ceiling, a One Size listing, and an empty description. Values and types matched every time, including the empty list for the ballgown query, so nothing in the loop's branch had to change. The one difference is speed: each MCP call starts the server as a second Python process and takes between half a second and a second, where the direct call was instant. The move also added a way to fail that the direct call didn't have. If the server can't start, `call_tool` raises `MCPError`, and `run_agent` does not catch it at the search step.
 
 ### Failure modes
 
@@ -478,7 +478,7 @@ ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your 
 1 model calls this session
 ```
 
-That is one readable line, but the exception left `run_agent` with nothing in `session["error"]`, so `run_eval.py` would log the try as a crash and `serve.py` would answer with a 500. `run_agent` now catches `ModelUnavailable` around both model tools, puts a message in `session["error"]` that names the step that failed, and stops:
+That is one readable line, but the exception left `run_agent` with nothing in `session["error"]`, so `run_eval.py` would log the try as a crash and `serve.py` would answer with a 500. `run_agent` now catches `ModelUnavailable` around both model tools, puts a message in `session["error"]` that names the step that failed, and stops. Since the stretch move, the fit card step catches `MCPError` instead. This is the run from this milestone:
 
 ```
 $ python app.py ask 'platform sneakers size 8' --trace
@@ -585,7 +585,7 @@ No criterion is missed after the fix. All five met their targets before it and a
 
 - **The criterion 5 fix is unproven:** it went from 4 of 5 to 5 of 5, and five tries can't tell a prompt that slips one time in five from one that never does. I'd run the empty-wardrobe scenario 30 times with each prompt. I stopped at five because my criteria are written out of five, and each try is two model calls against a limit of 15 a minute.
 - **The new prompt bans more than the criterion does:** it forbids "your" for the listed item and in phrases like "over your shoulders". I'd add a scenario that needs one of those and read what the model writes without it. I stopped because the assignment is one change, and loosening the wording would be a second.
-- **Three failures still leave `run_agent` as exceptions:** a rate limit that outlasts five retries (`RuntimeError`), the session budget (`QuotaGuard`), and an MCP server that won't start (`MCPError`). None of them sets `session["error"]`, so `serve.py` answers with a 500 and `run_eval.py` logs a crash. I'd catch each one in `run_agent` with its own message. I stopped at the three failures Milestone 2 names.
+- **Three failures still leave `run_agent` as exceptions:** a rate limit that outlasts five retries (`RuntimeError`), the session budget (`QuotaGuard`), and an MCP server that won't start at the search step (`MCPError`). None of them sets `session["error"]`, so `serve.py` answers with a 500 and `run_eval.py` logs a crash. I'd catch each one in `run_agent` with its own message. I stopped at the three failures Milestone 2 names.
 - **Criterion 4's target is too easy:** 40 of 40 fit cards across both runs name the price once and the platform once. I'd hold it to 5 of 5. I left the target alone because it was set in unit 3, and the only criterion I revised is one that couldn't be measured.
 - **`check_handoff.py` only looks at `new_item`:** a wrong wardrobe or outfit argument would pass it. I'd record every argument. I stopped because criterion 3 is about the item.
 - **The trace prints on every run, with or without `--trace`:** `trace.step()` in the starter's `trace.py` always prints. I'd make it print only when `--trace` asks for it. I left the starter file as it came.
@@ -629,6 +629,93 @@ No criterion is missed after the fix. All five met their targets before it and a
 ## Stretch Features
 
 I'm adding one of the two stretch features: a second tool on MCP. `create_fit_card` moves onto the server next to `search_listings`, and `suggest_outfit` stays a direct call. I'm not doing the retry with looser constraints.
+
+**What changed:** `create_fit_card` is registered in `mcp_server.py` with `outfit` (str) and `new_item` (dict), the same inputs as in my Tool Inventory. In `agent.py::run_agent`, the direct call became `call_tool("create_fit_card", {...})`, and its trace step is labeled `create_fit_card (via MCP)`. The traces pasted earlier in this README are from before the move, so they show the old label. The server now offers two tools:
+
+```
+$ python mcp_client.py
+Asking mcp_server.py what it offers…
+
+  search_listings
+    
+Search secondhand clothing listings by keyword. Optional size is a
+case-insensitive whole-token match ("M" matches "S/M" but not "XL", and a
+One Size listing matches any size); optional max_price is in US dollars,
+inclusive. Returns up to 10 listing dicts, best keyword match first, or an
+empty list when nothing matches.
+
+    - description: string
+    - size: string  (optional)
+    - max_price: number  (optional)
+
+  create_fit_card
+    
+Write a two-to-four sentence first-person caption for a thrift find, as
+plain text. outfit is the outfit suggestion to write about. new_item is one
+listing dict as returned by search_listings: it needs title, category,
+colors, style_tags, size, price (a number, in US dollars) and platform, and
+brand may be null. If outfit is empty or only whitespace, returns the string
+"No outfit to write a fit card for." without calling a model. Otherwise it
+calls a language model, so the text can differ between calls with the same
+inputs, and the call returns an error if the model can't be reached.
+
+    - outfit: string
+    - new_item: object
+```
+
+One full run after the move, with the cache off:
+
+```
+$ AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30' --trace
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected Y2K Baby Tee — Butterfly Print
+[2] suggest_outfit
+      in:  new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items
+      out: Outfit one pairs the butterfly baby tee with your baggy straight-leg jeans and chunky white sneakers. The fitt…
+[3] create_fit_card (via MCP)
+      in:  new_item=Y2K Baby Tee — Butterfly Print; outfit=Outfit one pairs the butterfly baby tee …
+      out: I scored this adorable Y2K butterfly baby tee on depop for just $18 and I am obsessed. I love styling it with …
+
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Outfit one pairs the butterfly baby tee with your baggy straight-leg jeans and chunky white sneakers. The fitted top balances the relaxed bottoms, and adding the black cropped zip hoodie on top keeps that authentic Y2K streetwear vibe. 
+
+Outfit two gives the tee a softer touch by tucking it into your wide-leg khaki trousers. Layer the vintage black denim jacket over your shoulders and finish the look with your black combat boots for a cool mix of cottagecore sweetness and edge.
+
+  Fit card: I scored this adorable Y2K butterfly baby tee on depop for just $18 and I am obsessed. I love styling it with baggy straight leg jeans and a black cropped zip hoodie for the ultimate streetwear look. It also looks so cute tucked into wide-leg khakis with chunky boots for that perfect mix of sweet and edgy.
+
+1 model calls this session, 386 prompt + 96 output tokens
+```
+
+**What behaved differently:** more than in the first move, because this tool calls a model and the server is a separate process.
+
+- **A model failure arrives as a different error:** the model call now happens on the server, so a bad key at this step comes back as `MCPError` where it used to be `ModelUnavailable`. `run_agent` catches `MCPError` around this call and puts a message in `session["error"]`. A bad key normally fails at `suggest_outfit` first, so I tested this step with a stand-in outfit:
+
+```
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected Y2K Baby Tee — Butterfly Print
+[2] suggest_outfit
+      in:  new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items
+      out: Wear it with jeans and white sneakers.
+[3] create_fit_card (via MCP)
+      in:  new_item=Y2K Baby Tee — Butterfly Print; outfit=Wear it with jeans and white sneakers.…
+      →    MCPError, stopping: The tool 'create_fit_card' returned an error: Error executing tool create_fit_card: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+  The search and the outfit worked, but create_fit_card failed on the MCP server, so there is no fit card. The tool 'create_fit_card' returned an error: Error executing tool create_fit_card: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+- **The server did not inherit my settings:** the MCP client starts the server with six environment variables (`HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`). `AI201_CACHE` is not one of them, so an eval with the cache off would still have cached fit cards on the server. `mcp_client.py::_call` now passes the key, the model name, and the cache setting to the server, and nothing else. With the cache off, two identical calls gave two different cards and wrote no cache file. With it on, they gave the same card.
+- **The error text was lost:** an `MCPError` raised inside the client came out as "unhandled errors in a TaskGroup (1 sub-exception)", with the cause hidden. `mcp_client.py::call_tool` now unwraps it, which is why the message above names the key.
+- **The call counter is short by one:** the run above made two model calls and printed "1 model calls this session". The fit card's call is counted in the server's process.
+- **Pacing and the session budget do not cover this tool:** `generate.py` keeps its per-minute count and its 300-call budget in process memory, and every MCP call starts a new process with both at zero. Fit card calls are never paced and never counted, so the agent as a whole can send more than 15 requests a minute. I have not run a full eval since the move, so I don't know whether that trips the limit.
+
+Both `mcp_client.py` changes are in a file the starter says is given. I changed it because the two problems were in the client and could not be fixed from `agent.py`.
+
+`check_handoff.py` now sits in front of `call_tool` for this tool. It still passes 5 of 5, and it still fails 0 of 5 when `create_fit_card` is given the second search result.
 
 ---
 

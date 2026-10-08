@@ -10,9 +10,11 @@ trusts the loop to print what it passes.
 
 This replaces the two model tools with stand-ins that write down the `new_item`
 they were called with, runs the real loop, and compares each recorded id with
-`session["selected_item"]` and with the first search result afterwards. The
-search still goes through MCP. No model is called, because the criterion is
-about what the tools receive and not about what the model writes.
+`session["selected_item"]` and with the first search result afterwards.
+`create_fit_card` is called over MCP, so its stand-in sits in front of
+`call_tool` and passes every other tool through. The search still goes through
+MCP. No model is called, because the criterion is about what the tools receive
+and not about what the model writes.
 
 It only looks at `new_item`. A wrong wardrobe or outfit argument would get past
 it, and so would a tool that ignored the item it was given.
@@ -26,6 +28,7 @@ import agent
 from utils.data_loader import get_example_wardrobe
 
 QUERY = "90s track jacket in size M"
+real_call_tool = agent.call_tool
 TRIES = 5
 
 
@@ -37,12 +40,14 @@ def run_once() -> tuple[dict, dict]:
         received["suggest_outfit"] = new_item["id"]
         return "stand-in outfit"
 
-    def record_card(outfit, new_item):
-        received["create_fit_card"] = new_item["id"]
+    def record_card(name, arguments):
+        if name != "create_fit_card":
+            return real_call_tool(name, arguments)
+        received["create_fit_card"] = arguments["new_item"]["id"]
         return "stand-in fit card"
 
     agent.suggest_outfit = record_outfit
-    agent.create_fit_card = record_card
+    agent.call_tool = record_card
 
     # run_agent prints its trace as it goes. Not what this check is showing.
     with contextlib.redirect_stdout(io.StringIO()):
