@@ -171,6 +171,28 @@ I finally scored the vintage Levi's 501 jeans of my dreams on depop for just $38
 - _What came back:_ Three different captions for the $38 Levi's, with the price as "thirty-eight dollars", "thirty eight dollars", and "38 dollars". A search for `$38` finds none of them. An earlier try also read like a seller's post.
 - _What I changed:_ The prompt now says to write as the buyer and to put the price in digits. Five more tries each had `$38` once.
 
+**Unit 4**
+
+Claude wrote this unit's code changes, ran both evals, marked each try, and drafted the unit 4 sections of this README from my instructions, one milestone at a time. A second model reviewed every milestone before I committed it. I chose which review findings to fix and made the commits. Claude picked the Milestone 5 improvement, and I let it stand.
+
+**Moment 3**
+
+- _What I asked for:_ I asked Claude to register `search_listings` on the MCP server with a description for an agent that can't see my code.
+- _What came back:_ A description that opened "Search 40 secondhand clothing listings" and explained size matching without the One Size rule. Claude also said the MCP results matched the direct call after comparing six queries with `==`. The second model pointed out that `==` treats `18` and `18.0` as equal, and that the description would mislead anyone filtering by size.
+- _What I changed:_ The description now says a One Size listing matches any size and gives no count. Claude reran the comparison on ten more inputs with a type check.
+
+**Moment 4**
+
+- _What I asked for:_ I asked Claude to mark the before run and write the verdicts.
+- _What came back:_ Criterion 3 marked MET at 5 of 5. The first review said the trace check compared a value with itself, and Claude wrote that it "could not have failed". A later review showed that was false. The old check would have caught the same break Claude used to test the new one.
+- _What I changed:_ The revision stayed and the claim came out. `check_handoff.py` records what each tool receives and is tested against three deliberate breaks instead of one.
+
+**Moment 5**
+
+- _What I asked for:_ I asked Claude to diagnose the one failed try and look for a pattern.
+- _What came back:_ A pattern built on one failure, then a count, 11 of 15, that hid a 5, 5, 1 split by item. The second model caught both over two reviews, and caught that the diagnosis quoted half of my prompt rule.
+- _What I changed:_ The Diagnoses section now quotes the whole rule, gives the split, and says one failed try is too few for a pattern.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -410,7 +432,7 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
 0 model calls this session
 ```
 
-**On the MCP move:** `search_listings` is registered in `mcp_server.py` under the same name, with the three typed inputs from my Tool Inventory. In `agent.py::run_agent`, the direct call `search_listings(description, size, max_price)` became `call_tool("search_listings", {...})` from `mcp_client.py`, and `agent.py` no longer imports the function. `suggest_outfit` and `create_fit_card` are still direct calls. I compared the direct call and the MCP call on the six example queries and ten edge cases, among them no filters, size only, the price ceiling, a One Size listing, and an empty description. Values and types matched every time, including the empty list for the ballgown query, so nothing in the loop's branch had to change. The one difference is speed: each MCP call starts the server as a second Python process and takes between half a second and a second, where the direct call was instant.
+**On the MCP move:** `search_listings` is registered in `mcp_server.py` under the same name, with the three typed inputs from my Tool Inventory. In `agent.py::run_agent`, the direct call `search_listings(description, size, max_price)` became `call_tool("search_listings", {...})` from `mcp_client.py`, and `agent.py` no longer imports the function. `suggest_outfit` and `create_fit_card` are still direct calls. I compared the direct call and the MCP call on the six example queries and ten edge cases, among them no filters, size only, the price ceiling, a One Size listing, and an empty description. Values and types matched every time, including the empty list for the ballgown query, so nothing in the loop's branch had to change. The one difference is speed: each MCP call starts the server as a second Python process and takes between half a second and a second, where the direct call was instant. The move also added a way to fail that the direct call didn't have. If the server can't start, `call_tool` raises `MCPError`, and `run_agent` does not catch it.
 
 ### Failure modes
 
@@ -558,6 +580,15 @@ The other four criteria were 5 of 5 before and after, so the change broke nothin
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
+
+No criterion is missed after the fix. All five met their targets before it and after it. These are the things I know are still wrong or unproven.
+
+- **The criterion 5 fix is unproven:** it went from 4 of 5 to 5 of 5, and five tries can't tell a prompt that slips one time in five from one that never does. I'd run the empty-wardrobe scenario 30 times with each prompt. I stopped at five because my criteria are written out of five, and each try is two model calls against a limit of 15 a minute.
+- **The new prompt bans more than the criterion does:** it forbids "your" for the listed item and in phrases like "over your shoulders". I'd add a scenario that needs one of those and read what the model writes without it. I stopped because the assignment is one change, and loosening the wording would be a second.
+- **Three failures still leave `run_agent` as exceptions:** a rate limit that outlasts five retries (`RuntimeError`), the session budget (`QuotaGuard`), and an MCP server that won't start (`MCPError`). None of them sets `session["error"]`, so `serve.py` answers with a 500 and `run_eval.py` logs a crash. I'd catch each one in `run_agent` with its own message. I stopped at the three failures Milestone 2 names.
+- **Criterion 4's target is too easy:** 40 of 40 fit cards across both runs name the price once and the platform once. I'd hold it to 5 of 5. I left the target alone because it was set in unit 3, and the only criterion I revised is one that couldn't be measured.
+- **`check_handoff.py` only looks at `new_item`:** a wrong wardrobe or outfit argument would pass it. I'd record every argument. I stopped because criterion 3 is about the item.
+- **The trace prints on every run, with or without `--trace`:** `trace.step()` in the starter's `trace.py` always prints. I'd make it print only when `--trace` asks for it. I left the starter file as it came.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
