@@ -99,7 +99,7 @@ FitFindr takes a request like `vintage graphic tee under $30` and pulls a descri
 
 **How the query is parsed:** Regex, in `agent.py::parse_query`. One set of patterns finds a price limit ("under $30", "$30", "30 or less"), another finds a size after the word "size", and what is left is the description.
 
-**What moves through the session:** `query`, then `parsed`, `search_results`, `selected_item`, `outfit_suggestion`, and `fit_card`, each written by one step and read by the next. `wardrobe` is set at the start, and `error` is set only when the search finds nothing.
+**What moves through the session:** `query`, then `parsed`, `search_results`, `selected_item`, `outfit_suggestion`, and `fit_card`, each written by one step and read by the next. `wardrobe` is set at the start, and `error` is set when the search finds nothing or a model call fails. `notice` is set when the wardrobe is empty.
 
 ---
 
@@ -251,19 +251,105 @@ that produced it:
 **Happy path**
 
 ```
+$ AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30' --trace
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected Y2K Baby Tee — Butterfly Print
+[2] suggest_outfit
+      in:  new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items
+      out: Outfit one pairs the Y2K baby tee with baggy straight-leg jeans, the vintage black denim jacket, and chunky wh…
+[3] create_fit_card
+      in:  new_item=Y2K Baby Tee — Butterfly Print; outfit=Outfit one pairs the Y2K baby tee with b…
+      out: I just scored this adorable Y2K butterfly baby tee on depop for only $18 and I am totally obsessed. I love sty…
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+  Outfit:   Outfit one pairs the Y2K baby tee with baggy straight-leg jeans, the vintage black denim jacket, and chunky white sneakers. This creates a classic early 2000s streetwear look that balances the fitted butterfly top with relaxed denim. 
+
+Outfit two pairs the Y2K baby tee with wide-leg khaki trousers, the brown leather belt, and chunky white sneakers. Tucking the baby tee into the khakis highlights the waist while blending the sweet pink and purple butterfly print with earthy, minimal tones.
+
+  Fit card: I just scored this adorable Y2K butterfly baby tee on depop for only $18 and I am totally obsessed. I love styling it with baggy straight leg jeans and a black denim jacket for the ultimate early 2000s streetwear vibe. It also looks so cute tucked into wide leg khaki trousers with a leather belt for a sweet yet earthy everyday look.
+
+2 model calls this session, 666 prompt + 180 output tokens
 ```
 
 **Empty search**
 
 ```
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
 
+  No listings matched "designer ballgown" in size XXS under $5. You could drop the size or try another one, raise the price limit, or describe the item in different words.
+
+0 model calls this session
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+**On the MCP move:** `search_listings` is registered in `mcp_server.py` under the same name, with the three typed inputs from my Tool Inventory. In `agent.py::run_agent`, the direct call `search_listings(description, size, max_price)` became `call_tool("search_listings", {...})` from `mcp_client.py`, and `agent.py` no longer imports the function. `suggest_outfit` and `create_fit_card` are still direct calls. I compared the direct call and the MCP call on the six example queries and ten edge cases, among them no filters, size only, the price ceiling, a One Size listing, and an empty description. Values and types matched every time, including the empty list for the ballgown query, so nothing in the loop's branch had to change. The one difference is speed: each MCP call starts the server as a second Python process and takes between half a second and a second, where the direct call was instant.
+
+### Failure modes
+
+I triggered each failure before changing any code and wrote down what the agent said. Two of the three needed a change.
+
+**Empty search:** `designer ballgown size XXS under $5` matches nothing. The agent stopped after the search and said what to change, so I left it alone. The output is the empty-search trace above.
+
+**Empty wardrobe:** `--empty-wardrobe` hands `suggest_outfit` a wardrobe with no items. It returned general advice and the run finished with a fit card, but nothing told the user the wardrobe was empty, so the advice read like a normal answer. `run_agent` now puts a note in `session["notice"]`, and `app.py` prints it under the fit card:
+
+```
+$ python app.py ask 'denim jacket under $50' --empty-wardrobe --trace
+(running with an empty wardrobe)
+[1] search_listings (via MCP)
+      in:  {'description': 'denim jacket', 'size': None, 'max_price': 50.0}
+      out: 7 items: Denim Jacket — Light Wash, Cropped, Vintage Levi's 501 Jeans — Medium Wash, 90s Track Jacket — Navy/White Stripe … +4 more
+      →    branch: selected Denim Jacket — Light Wash, Cropped
+[2] suggest_outfit
+      in:  new_item=Denim Jacket — Light Wash, Cropped; wardrobe=0 items
+      out: Grab a light wash cropped Wrangler denim jacket for instant vintage streetwear cred. Wear it over a black grap…
+      →    empty wardrobe: general advice, notice set
+[3] create_fit_card
+      in:  new_item=Denim Jacket — Light Wash, Cropped; outfit=Grab a light wash cropped Wrangler denim…
+      out: I am so obsessed with this vintage cropped Wrangler denim jacket I just scored on poshmark for only $42. I am …
+
+  Found:    Denim Jacket — Light Wash, Cropped — $42.0 on poshmark
+
+  Outfit:   Grab a light wash cropped Wrangler denim jacket for instant vintage streetwear cred. Wear it over a black graphic tee paired with a pleated plaid mini skirt and chunky platform loafers for a cool grunge contrast. Alternatively, throw it on over a ribbed white crop top matched with high-waisted wide-leg cargo pants and retro canvas sneakers for an effortless casual vibe. Toss a colorful nylon crossbody bag over the shoulder to tie the whole look together.
+
+  Fit card: I am so obsessed with this vintage cropped Wrangler denim jacket I just scored on poshmark for only $42. I am styling it for a grunge look over a black graphic tee with a plaid mini skirt and chunky platform loafers. It adds the ultimate streetwear vibe to every outfit I throw together.
+
+  Note:     Your wardrobe is empty, so the outfit is general styling advice and not built from pieces you own. Add a few wardrobe items and ask again to get outfits that use them.
+
+0 model calls this session, 2 served from cache
+```
+
+**Model unavailable:** I ran `platform sneakers size 8`, which I had not asked before, with the last character of my key changed. I set the changed key for that one command and left `.env` alone. Before the fix, `run_agent` raised `ModelUnavailable` and `app.py` printed it:
+
+```
+$ python app.py ask 'platform sneakers size 8'
+
+ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+1 model calls this session
+```
+
+That is one readable line, but the exception left `run_agent` with nothing in `session["error"]`, so `run_eval.py` would log the try as a crash and `serve.py` would answer with a 500. `run_agent` now catches `ModelUnavailable` around both model tools, puts a message in `session["error"]` that names the step that failed, and stops:
+
+```
+$ python app.py ask 'platform sneakers size 8' --trace
+[1] search_listings (via MCP)
+      in:  {'description': 'platform sneakers', 'size': 'US 8', 'max_price': None}
+      out: 1 items: Platform Sneakers — White Chunky Sole
+      →    branch: selected Platform Sneakers — White Chunky Sole
+[2] suggest_outfit
+      in:  new_item=Platform Sneakers — White Chunky Sole; wardrobe=10 items
+      →    ModelUnavailable, stopping: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+  The search worked, but suggest_outfit could not get an answer from the model, so there is no fit card. The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+1 model calls this session
+```
 
 ---
 

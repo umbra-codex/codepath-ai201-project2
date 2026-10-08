@@ -46,6 +46,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "wardrobe": wardrobe,        # the user's wardrobe
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
+        "notice": None,              # set when the run finished with a caveat
         "error": None,               # set when the run ended early
     }
 
@@ -125,6 +126,21 @@ def _no_results_message(parsed: dict) -> str:
         changes[-1] = "or " + changes[-1]
     joiner = ", " if len(changes) > 2 else " "
     return f"{searched}. You could {joiner.join(changes)}."
+
+
+_EMPTY_WARDROBE_NOTICE = (
+    "Your wardrobe is empty, so the outfit is general styling advice and not "
+    "built from pieces you own. Add a few wardrobe items and ask again to get "
+    "outfits that use them."
+)
+
+
+def _model_down_message(step: str, exc: ModelUnavailable) -> str:
+    """Say which step lost the model, what that cost, and what to try."""
+    return (
+        f"The search worked, but {step} could not get an answer from the "
+        f"model, so there is no fit card. {exc}"
+    )
 
 
 # ── planning loop ─────────────────────────────────────────────────────────────
@@ -207,21 +223,55 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             # The branch: nothing found means stop here, before any model call.
             if not session["search_results"]:
                 session["error"] = _no_results_message(session["parsed"])
+                trace.step(
+                    "search_listings (via MCP)", inputs=str(parsed),
+                    returned=session["search_results"],
+                    note="branch: empty, stopping before suggest_outfit",
+                )
                 step = None
             else:
                 session["selected_item"] = session["search_results"][0]
+                trace.step(
+                    "search_listings (via MCP)", inputs=str(parsed),
+                    returned=session["search_results"],
+                    note=f"branch: selected {session['selected_item']['title']}",
+                )
                 step = "suggest_outfit"
 
         elif step == "suggest_outfit":
-            session["outfit_suggestion"] = suggest_outfit(
-                session["selected_item"], session["wardrobe"]
-            )
-            step = "create_fit_card"
+            item = session["selected_item"]
+            pieces = len(session["wardrobe"].get("items") or [])
+            inputs = f"new_item={item['title']}; wardrobe={pieces} items"
+            note = ""
+            if not pieces:
+                session["notice"] = _EMPTY_WARDROBE_NOTICE
+                note = "empty wardrobe: general advice, notice set"
+            try:
+                session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+            except ModelUnavailable as exc:
+                session["error"] = _model_down_message(step, exc)
+                trace.step(step, inputs=inputs, note=f"ModelUnavailable, stopping: {exc}")
+                step = None
+            else:
+                trace.step(step, inputs=inputs,
+                           returned=session["outfit_suggestion"], note=note)
+                step = "create_fit_card"
 
         elif step == "create_fit_card":
-            session["fit_card"] = create_fit_card(
-                session["outfit_suggestion"], session["selected_item"]
+            item = session["selected_item"]
+            inputs = (
+                f"new_item={item['title']}; "
+                f"outfit={session['outfit_suggestion'][:40]}…"
             )
+            try:
+                session["fit_card"] = create_fit_card(
+                    session["outfit_suggestion"], item
+                )
+            except ModelUnavailable as exc:
+                session["error"] = _model_down_message(step, exc)
+                trace.step(step, inputs=inputs, note=f"ModelUnavailable, stopping: {exc}")
+            else:
+                trace.step(step, inputs=inputs, returned=session["fit_card"])
             step = None
 
     return session
@@ -239,6 +289,8 @@ def _show(session: dict) -> None:
     print(f"  found:    {item.get('title')} — ${item.get('price')} on {item.get('platform')}")
     print(f"  outfit:   {session['outfit_suggestion']}")
     print(f"  fit card: {session['fit_card']}")
+    if session["notice"]:
+        print(f"  note:     {session['notice']}")
 
 
 if __name__ == "__main__":
