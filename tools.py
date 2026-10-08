@@ -242,9 +242,11 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
             f"{_describe_item(new_item)}\n\n"
             f"You know nothing about what they own. Give general styling "
             f"advice for the item: one or two outfit ideas built from the "
-            f"kinds of pieces that go with it. Do not describe any other piece "
-            f"as theirs: introduce each one with \"a\" or \"an\", never "
-            f"\"your\"."
+            f"kinds of pieces that go with it. Do not describe any other "
+            f"piece, or their closet in general, as theirs. Introduce each "
+            f"piece with \"a\" or \"an\", and do not write \"your\" or "
+            f"\"you own\" anywhere in the answer, including the last "
+            f"sentence."
         )
     else:
         prompt = (

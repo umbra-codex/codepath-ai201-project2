@@ -482,21 +482,71 @@ $ python app.py ask 'platform sneakers size 8' --trace
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** one prompt. In `tools.py::suggest_outfit`, I rewrote the rule at the end of the empty-wardrobe prompt. The scenarios, the loop, and the temperature are the same as in the before run.
 
-**Which failure it was meant to fix:**
+```
+before: Do not describe any other piece as theirs: introduce each one with "a" or "an", never "your".
+
+after:  Do not describe any other piece, or their closet in general, as theirs. Introduce each piece with "a" or "an", and do not write "your" or "you own" anywhere in the answer, including the last sentence.
+```
+
+**Which failure it was meant to fix:** criterion 5, try 4 of the before run, where the outfit closed with "in your rotation". My diagnosis was that the ban's only concrete instruction was about introducing a piece, so a closing sentence about the closet had nothing to apply. The new wording names the closet, bans the two phrases anywhere in the answer, and names the last sentence. That try was a borderline call, as I said under the Run Log, so this fix may be chasing one ambiguous sentence.
 
 ### Run Log — After
 
+**Before**, repeated from the Run Log section so the two sit together:
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 | --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
-| 1.        |        |       |       |       |       |       |         |
-| 2.        |        |       |       |       |       |       |         |
-| 3.        |        |       |       |       |       |       |         |
-| 4.        |        |       |       |       |       |       |         |
-| 5.        |        |       |       |       |       |       |         |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item is the item the next two tools receive | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the price and the platform once each | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. An empty wardrobe gets general advice, not invented pieces | 4 of 5 | PASS | PASS | PASS | FAIL | PASS | MET (4/5) |
 
-**Did it help, and how do I know:**
+**After:**
+
+| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
+| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item is the item the next two tools receive | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the price and the platform once each | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. An empty wardrobe gets general advice, not invented pieces | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+The full log is `results/run_2026-10-08_0743_after.md`, written by `run_eval.py::main` with the cache off. I marked each try the same way as in the before run. Row 3 is the original trace check. The revised criterion 3 also passed 5 of 5 after the change, from `python check_handoff.py`.
+
+**The verdicts in one table:**
+
+| Criterion | Target | Before | After |
+| --------- | ------ | ------ | ----- |
+| 1. A matching query completes all three tools | 4 of 5 | MET (5/5) | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | MET (5/5) | MET (5/5) |
+| 3. The selected item is the item the next two tools receive | 5 of 5 | MET (5/5) | MET (5/5) |
+| 4. The fit card names the price and the platform once each | 4 of 5 | MET (5/5) | MET (5/5) |
+| 5. An empty wardrobe gets general advice, not invented pieces | 4 of 5 | MET (4/5) | MET (5/5) |
+
+**Real output from the after run**, criterion 5, try 4, from `tools.py::suggest_outfit` and `tools.py::create_fit_card`. I show try 4 because the before run's try 4 is the one pasted above. The tries are independent.
+
+```
+- stopped early: no
+- selected_item: Denim Jacket — Light Wash, Cropped ($42.0, poshmark)
+- search_results: 7
+
+Outfit suggestion:
+This vintage Wrangler denim jacket is a versatile staple. For a classic casual look, layer it over a basic white tee paired with high-waisted black trousers and chunky loafers. Alternatively, create a streetwear-inspired outfit by wearing a graphic hoodie underneath, combined with a pleated tennis skirt and retro canvas sneakers. Both combinations balance the cropped silhouette effortlessly.
+
+Fit card:
+I just scored this vintage Wrangler cropped denim jacket on poshmark for only $42 and I am completely obsessed with it. I am styling it over a graphic hoodie with a pleated tennis skirt and retro canvas sneakers for the ultimate streetwear look. It is definitely going to be my new favorite layering piece.
+```
+
+**Did it help, and how do I know:** criterion 5 went from 4 of 5 to 5 of 5, and none of the five empty-wardrobe outfits in the after run contains "your" at all. Each one ends on the jacket or the outfit, where one of the before outfits turned to the reader's closet. The result moved the way the diagnosis said it would.
+
+I can't call that proof. The before run was already 4 of 5, and five tries can't separate a prompt that slips one time in five from one that never does. A prompt that slips one time in five would still go 5 of 5 about a third of the time. To know, I would need many more tries of this one scenario.
+
+The new rule is also wider than my criterion. Criterion 5 allows "your" for the listed item, and it has no problem with a phrase like "over your shoulders". The prompt now bans both. None of the ten empty-wardrobe outfits across the two runs uses "your" that way, so my test can't show what the wider ban costs.
+
+The other four criteria were 5 of 5 before and after, so the change broke nothing I measure. The example-wardrobe outfits still use "your" in 11 of 15, the same count as before, which is what I expected because that prompt did not change.
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
