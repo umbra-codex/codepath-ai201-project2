@@ -191,17 +191,100 @@ I finally scored the vintage Levi's 501 jeans of my dreams on depop for just $38
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 | --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
-| 1.        |        |       |       |       |       |       |         |
-| 2.        |        |       |       |       |       |       |         |
-| 3.        |        |       |       |       |       |       |         |
-| 4.        |        |       |       |       |       |       |         |
-| 5.        |        |       |       |       |       |       |         |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The selected item is the item the next two tools receive | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. The fit card names the price and the platform once each | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 5. An empty wardrobe gets general advice, not invented pieces | 4 of 5 | PASS | PASS | PASS | FAIL | PASS | MET (4/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+The full log is `results/run_2026-10-07_2101_before.md`, written by `run_eval.py::main` with the cache off. Each try is one call to `agent.py::run_agent`.
+
+Criterion 5, try 4 is the one FAIL. Its outfit ends with "any pattern or neutral basic in your rotation". "Your" there points at clothes the agent was never shown, so I counted it. It names no single piece, and a looser reading would pass it.
+
+Criterion 3 passed every try, but it could not have failed. The trace prints the title from the same object `run_agent` hands to each tool, so the two only differ if the loop's code changes.
+
+**Real output from one try per criterion**, copied from that log. Every trace is printed by `agent.py::run_agent`, the outfit text comes from `tools.py::suggest_outfit`, and the fit card comes from `tools.py::create_fit_card`.
+
+**Criterion 1, try 1:** `vintage graphic tee under $30`
 
 ```
+- stopped early: no
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
 
+Fit card:
+I am still obsessed with this butterfly print Y2K baby tee I just scored on depop for only $18. The white, pink, and purple graphic gives me total nostalgic energy, especially when I style it with baggy dark wash jeans and chunky white sneakers for that classic streetwear look. I also love layering it under a vintage black denim jacket with wide-leg khakis and combat boots for an edgy mix of earth tones.
+
+Trace:
+[1] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected Y2K Baby Tee — Butterfly Print
+[2] suggest_outfit
+      in:  new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items
+      out: Outfit one balances the fitted Y2K baby tee with your baggy straight-leg jeans in dark wash and chunky white s…
+[3] create_fit_card
+      in:  new_item=Y2K Baby Tee — Butterfly Print; outfit=Outfit one balances the fitted Y2K baby …
+      out: I am still obsessed with this butterfly print Y2K baby tee I just scored on depop for only $18. The white, pin…
+```
+
+**Criterion 2, try 1:** `designer ballgown size XXS under $5`
+
+```
+- stopped early: yes — No listings matched "designer ballgown" in size XXS under $5. You could drop the size or try another one, raise the price limit, or describe the item in different words.
+- selected_item: (none)
+- search_results: 0
+
+Trace:
+[1] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
+```
+
+**Criterion 3, try 1:** `90s track jacket in size M`
+
+```
+- stopped early: no
+- selected_item: 90s Track Jacket — Navy/White Stripe ($45.0, poshmark)
+- search_results: 5
+
+Trace:
+[1] search_listings (via MCP)
+      in:  {'description': '90s track jacket', 'size': 'M', 'max_price': None}
+      out: 5 items: 90s Track Jacket — Navy/White Stripe, 90s Leather Bomber — Black, 90s Silk Slip Dress — Floral, Midi Length … +2 more
+      →    branch: selected 90s Track Jacket — Navy/White Stripe
+[2] suggest_outfit
+      in:  new_item=90s Track Jacket — Navy/White Stripe; wardrobe=10 items
+      out: Outfit one pairs the 90s track jacket with the white ribbed tank top, baggy straight-leg jeans, and chunky whi…
+[3] create_fit_card
+      in:  new_item=90s Track Jacket — Navy/White Stripe; outfit=Outfit one pairs the 90s track jacket wi…
+      out: Scored this vintage Champion 90s track jacket on Poshmark for just $45 and I am obsessed. I love throwing it o…
+```
+
+**Criterion 4, try 1:** `silk slip dress in midi length under $40`
+
+```
+- stopped early: no
+- selected_item: 90s Silk Slip Dress — Floral, Midi Length ($30.0, depop)
+- search_results: 5
+
+Fit card:
+I just scored this dreamy nineties floral silk slip dress on depop for only $30. I am styling it under an oversized grey crewneck and baggy jeans for the ultimate vintage streetwear moment. It also looks so edgy layered with a black denim jacket and combat boots.
+```
+
+**Criterion 5, try 4:** `denim jacket under $50`, empty wardrobe
+
+```
+- stopped early: no
+- selected_item: Denim Jacket — Light Wash, Cropped ($42.0, poshmark)
+- search_results: 7
+
+Outfit suggestion:
+Grab this Wrangler jacket for instant vintage cool. Since it features a cropped, light-wash cut, it serves as a versatile streetwear staple. Try pairing it with an oversized graphic tee, a pleated miniskirt, and chunky platform boots for an edgy, balanced silhouette. Alternatively, style it over a ribbed black slip dress paired with retro sneakers and a canvas tote bag for an effortless, casual weekend look. The light blue shade makes it easy to mix and match with almost any pattern or neutral basic in your rotation.
+
+Fit card:
+I just scored this amazing vintage cropped Wrangler denim jacket on poshmark for only $42 and I am obsessed. I am styling it with an oversized graphic tee, a pleated miniskirt, and chunky platform boots for the ultimate streetwear vibe. It is already my favorite new piece to throw on for an effortless look.
 ```
 
 ---
