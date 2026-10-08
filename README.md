@@ -626,4 +626,10 @@ No criterion is missed after the fix. All five met their targets before it and a
 
 ---
 
+## Stretch Features
+
+I'm adding one of the two stretch features: a second tool on MCP. `create_fit_card` moves onto the server next to `search_listings`, and `suggest_outfit` stays a direct call. I'm not doing the retry with looser constraints.
+
+---
+
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
