@@ -720,3 +720,7 @@ Both `mcp_client.py` changes are in a file the starter says is given. I changed 
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
