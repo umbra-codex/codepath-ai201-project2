@@ -724,3 +724,13 @@ Both `mcp_client.py` changes are in a file the starter says is given. I changed 
 ---
 
 ## Capstone
+
+**The Shape**
+
+I picked shape B, harden against failure, and I'm extending FitFindr, my Project 2 agent. The agent has three known failures it does not handle: the search step can raise an error from the MCP server, the session budget guard can fire, and the model can answer 429 until the five retries run out. Each one leaves `run_agent` as an exception, and `serve.py` turns it into a 500 with the exception text in it. I'm adding one failure boundary inside `run_agent` that catches those three and returns a session whose `error` says which step failed and what the user can do about it, keeping anything that already succeeded. I'm also adding a per-step log written to a file, with step names, inputs, outputs and durations, so every run leaves a record, and that record is what I'll measure the before and after with. I estimate the boundary and the fault harness at about an hour, which is inside the ninety minutes.
+
+Out of scope. I thought about three things and I'm not doing them:
+
+- Replacing the per-call MCP subprocess with one long-lived connection. It is why the fit card's model call is missing from the call count, but fixing it means reworking how `mcp_client.py` talks to the server, and the starter says that file is given.
+- Changing the retry or rate-limit policy, or adding a fallback model. The boundary reports a failure and does not try harder to avoid one.
+- Touching search, the prompts, the fit card wording or the web page.
