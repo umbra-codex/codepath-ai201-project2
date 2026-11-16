@@ -906,3 +906,41 @@ After:
 {"ts": "2026-11-16T03:10:17.696+00:00", "run_id": "73d45bff", "process": "run_extension.py", "pid": 2736597, "step": "search_listings", "input": "{'description': 'designer ballgown', 'size': 'XXS', 'max_price': None}", "output": "0 listings", "duration_ms": 395.3}
 {"ts": "2026-11-16T03:10:17.696+00:00", "run_id": "73d45bff", "process": "run_extension.py", "pid": 2736597, "step": "run", "input": "designer ballgown size XXS", "output": "error: No listings matched \"designer ballgown\" in size XXS. You could drop the size or try another one or describe the item in different words.", "duration_ms": 395.5}
 ```
+
+**Verdicts**
+
+Both result sets side by side, against the targets in `criteria.md`, which I did not change after the trials. A criterion is MET only if all three runs reached 3 of 3. The full tables and the output behind them are under Run Log.
+
+| Criterion | Target | Before: `d8dfb41` (Run 1 / 2 / 3) | After: `4053f67` (Run 1 / 2 / 3) | Verdict before | Verdict after |
+|---|---|---|---|---|---|
+| 1. A known failure ends with a message, not an exception | 3 of 3 | 0/3, 0/3, 0/3 | 3/3, 3/3, 3/3 | MISSED | MET |
+| 2. A caller of the web service gets the session, not a 500 | 3 of 3 | 0/3, 0/3, 0/3 | 3/3, 3/3, 3/3 | MISSED | MET |
+| 3. Every run leaves a record of each step it took, failures included | 3 of 3 | 3/3, 3/3, 3/3 | 3/3, 3/3, 3/3 | MET | MET |
+| 4. The record matches a hand count of what the run spent | 3 of 3 | 2/3, 2/3, 2/3 | 2/3, 2/3, 2/3 | MISSED | MISSED |
+| 5. The old paths are unchanged | 3 of 3 | 3/3, 3/3, 3/3 | 3/3, 3/3, 3/3 | MET | MET |
+
+**Diagnosis**
+
+Criterion 1, before. The stage is the loop in `agent.py::run_agent`. It caught `ModelUnavailable` at `suggest_outfit` and `MCPError` at `create_fit_card`, and nothing else, so three exceptions from other places left the function: the `MCPError` from the search call, the `QuotaGuard` that `generate.py::_check_budget` raises at `suggest_outfit`, and the `RuntimeError` that `generate.py::generate` raises after five rate-limit retries. The three before rows show one of each (`RuntimeError`, `MCPError`, `QuotaGuard`). The mechanism is that no handler stood at the edge of the loop, so an exception raised anywhere a step did not guard against went straight to the caller.
+
+Criterion 2, before. The same stage and the same mechanism, seen from the web side. `serve.py::ask` wraps `run_agent` in `except Exception` and answers 500 with a JSON body such as `{"error": "RuntimeError: ..."}`, which is what its code says to do. The 500 existed because the exception reached it. Nothing was wrong in `serve.py`.
+
+Criterion 4, before and after. The stage is the model-call line, which `generate.py::generate` writes through `runlog.py::step` only after `generate_content` returns or raises. The fit card's request is made in the MCP server's process. In `fit-card-exit` that process dies in the middle of the request, so no code runs after the call and no line is written. The record has 1 request for the 2 that were sent, with the tokens right (120 and 30). The mechanism is that the log is written at the end of a request, in a process that can be killed, and my target assumed the log was complete. It is complete only while no process is killed. I predicted this miss in `criteria.md` before any trial, which is why `fit-card-exit` is one of the trials. The boundary does not touch it, and the before and after rows are identical.
+
+The pattern: criteria 1 and 2 are one problem with two symptoms. The problem is exceptions leaving `run_agent`, and one change cleared both. Criterion 4 is a different problem, in the logger and not in the loop. Three misses before the change came from two problems.
+
+I met criteria 3 and 5 in both runs. They were guards. I wrote them expecting to pass, and said so in `criteria.md` before any trial. They show that the boundary did not break the log or the old paths, and they do not test anything hard. The one I would tighten is criterion 3. I would add `fit-card-exit` as a fourth trial, restate the target as 4 of 4 with 6 lines expected, and drop "and no process killed" from its wording. That run writes 5 lines, so criterion 3 would miss for the same reason as criterion 4. What that would show is that the line count and the request count miss on the same line, which points at the logger. I did not revise any criterion after the trials.
+
+**The Improvement**
+
+The improvement is the failure boundary. `agent.py::run_agent` catches `MCPError`, `QuotaGuard` and `RateLimitExhausted` (a subclass of `RuntimeError` that `generate.py::generate` now raises in place of the bare one) and returns the session with an `error` that names the step and gives at least one action. It is commit `7c5fc0e`.
+
+The order of events: I built it first, in Milestone 2, because it is the extension I declared in The Shape. The criteria came after it, the runs after that, and the diagnosis above after the runs. So the diagnosis explains the misses the change was already aimed at, and it did not steer the change. The before run is the commit just before the change and the after run is `4053f67`, which contains it, three passes of the fifteen trials each, in the same format. The before run used the runner copied into a worktree, as described under Run Log. Because the criteria were written after the change, this shows that the change meets them. It does not show that the criteria would have caught the problem if I had not known about it.
+
+Did it help? Yes, for the two criteria it was aimed at. Criteria 1 and 2 went from 0 of 3 to 3 of 3 in every pass. It changed nothing for criterion 4, as the diagnosis says it would not, and criteria 3 and 5 stayed at 3 of 3, so I saw no regression in what I measured.
+
+The trade is that a failure which was an HTTP 500 is now a 200 with `error` in the body. That is the contract `serve.py` documents, but a caller has to read `error`, and a monitor that watches only status codes will no longer see these three failures. From reading `app.py` (I did not run it), the command line now prints the message and exits 0 for these failures, where it used to print the exception and exit 1.
+
+The boundary also changed what the user reads when the session budget runs out. `generate.py::_check_budget` says that this usually means a loop is running away and to find it before raising the number. The boundary's message says to restart the program, or to raise `SESSION_REQUEST_BUDGET` if more is needed. A budget hit is normally a loop bug, so the new text points the user toward the ceiling and away from the loop. Only the first line of the original text survives, in the log's `error` field.
+
+The boundary catches by type on purpose. The tuple leaves out the bare `RuntimeError` that `trace.check_iterations` raises, so a runaway loop still stops the run. A new kind of failure would also still escape.
