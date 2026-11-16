@@ -1,6 +1,88 @@
 # Running FitFindr
 
-Everything about how the starter works and how to use it.
+## Capstone: run it and read the log
+
+This is the local path with logs. There is no hosted URL. You run one command
+in a terminal and read the log it writes.
+
+### What the environment needs
+
+- Python 3.13. I ran it on 3.13.15 on Linux, and `.python-version` says 3.13.
+  `requirements.txt` also allows 3.11 and 3.12 and rules out 3.14. If `python3`
+  on your machine is 3.14, as it is on mine, use `python3.13` or `uv` as below.
+- The five packages in `requirements.txt`, in a virtual environment.
+- A Gemini API key in `.env` as `GEMINI_API_KEY`. `.env` is ignored by git, and
+  `.env.example` shows the format.
+- Internet access to Google's API. Nothing else is needed: there is no database
+  and no second service or key.
+- The model is `gemini-3.5-flash-lite`, set in `config.py`. `AI201_MODEL`
+  changes it.
+
+### Set up from a clean checkout
+
+```bash
+git clone https://github.com/umbra-codex/codepath-ai201-project2.git
+cd codepath-ai201-project2
+python3.13 -m venv .venv          # or: uv venv --python 3.13
+source .venv/bin/activate
+pip install -r requirements.txt   # or: uv pip install -r requirements.txt
+cp .env.example .env              # then paste your key after GEMINI_API_KEY=
+python test.py
+```
+
+`python test.py` should end with `10 passed`. It makes one small model call to
+check the key.
+
+### The command
+
+```bash
+AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'
+```
+
+`AI201_CACHE=0` turns the answer cache off, so the run makes real model
+requests. Use single quotes around the query. The run prints the three steps,
+then the item, the outfit and the fit card. It takes a few seconds and makes two
+model requests: one in the agent's process, one inside the MCP server's.
+
+### Where the log goes
+
+Every run appends JSON lines to `logs/fitfindr.jsonl`, which git ignores. Set
+`AI201_LOG_PATH` to write somewhere else. Runs kept as evidence are in
+`results/`. One run is every line with the same `run_id`:
+
+```bash
+tail -n 8 logs/fitfindr.jsonl
+```
+
+| Field | What it holds |
+|---|---|
+| `ts`, `run_id`, `process`, `pid` | when, which run, which process (`app.py` or `mcp_server.py`), which pid |
+| `step` | `run`, `search_listings`, `suggest_outfit`, `create_fit_card`, `model_call`, or `cache_hit` |
+| `input`, `output` | what went in and what came out, each cut to 200 characters |
+| `error` | set when the step raised, as `ExceptionType: first line` |
+| `duration_ms` | how long the step took |
+| `attempt`, `prompt_tokens`, `output_tokens` | on `model_call` lines: which retry, and the tokens the service reported |
+
+A run that fails still leaves its lines. A step that raised carries an `error`
+field, and the closing `run` line says `error: ...` in its `output` when the run
+ended early. `python faults.py` breaks one thing at a time without calling the
+model, to see those records.
+
+### The cost
+
+```bash
+python measure_cost.py
+```
+
+Runs the agent ten times with the cache off, then once on a query that matches
+nothing, and writes the numbers and the log to `results/`.
+
+---
+
+## The starter's own guide
+
+Everything about how the starter works and how to use it. Written by the
+course, left as it was.
 
 ---
 
