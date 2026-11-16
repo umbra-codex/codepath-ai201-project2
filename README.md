@@ -805,3 +805,104 @@ How I measured it: `python measure_cost.py` runs the agent ten times through `ru
 Total tokens per run ranged from 780 to 886, and seconds from 3.0 to 5.5. Run 8 is the 5.5: its fit card's model call took 3.3 seconds, where the average for that call is 1.0. It still made 2 requests, so there was no retry. Model calls account for 1.9 of the 3.4 seconds (0.9 in the agent, 1.0 in the server). The rest looks like the two trips to the MCP server, each of which starts a new Python process. In run 1 the search took 0.6 seconds, and the fit card step took 2.0 seconds, of which its model call was 1.0.
 
 This is the cost of a run that completes. A query that matches nothing makes 0 requests and took 0.5 seconds (run 11). A run that gets rate limited costs more: each 429 counts as a request in the log, so the outfit step alone can spend 5 requests and return nothing. Ten runs on one day against one model is a small sample, and the output tokens vary from run to run (147 to 195 here, at the same temperature).
+
+**Run Log**
+
+`run_extension.py` runs the fifteen trials, three for each criterion, scores each one against what the criterion says counts as a pass, and does the whole pass three separate times, so a cell is the number of trials that passed out of 3. The three passes run one after another in one process, so the pacing state in `generate.py` carries across them. No scored result depends on it. The failure trials are triggered on purpose with `faults.py`, which breaks one thing from outside the production code and calls no model. The four trials that need the model (the clean query in criteria 3 and 4, and the two matching queries in criterion 5) call the real one with the cache off. The before run is on `d8dfb41`, the commit before the boundary, taken from a git worktree. `run_extension.py` did not exist then (it was added in `4053f67`), so I copied it into the worktree and ran it there with the main virtual environment's Python. The after run is on `4053f67`. The criteria name `7c5fc0e` for the after run. `4053f67` has the same agent code and adds the runner and the docs. Both are in `results/` as `run_2026-11-15_2206_before` and `run_2026-11-15_2209_after`, each with a `.md` and a `.jsonl`.
+
+What I ran to get each number:
+
+| Criterion | What has to be run | The three trials |
+|---|---|---|
+| 1. A known failure ends with a message | The three known failures, triggered on purpose | `model-429`, `search-down`, `budget` |
+| 2. A web caller gets the session, not a 500 | The same three failures, through `serve.py`'s `/ask` | the same three |
+| 3. Every run leaves a record | Runs that end three different ways, then read the log back | a clean query, a query that matches nothing, `model-429` |
+| 4. The record matches a hand count | Runs where I know the request count, compared to the log | a clean query (2), `model-429` (5), `fit-card-exit` (2) |
+| 5. The old paths are unchanged | The paths that worked before | two matching queries, one that matches nothing |
+
+Before the boundary, on `d8dfb41`:
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. A known failure ends with a message, not an exception | 3 of 3 | 0/3 | 0/3 | 0/3 | MISSED |
+| 2. A caller of the web service gets the session, not a 500 | 3 of 3 | 0/3 | 0/3 | 0/3 | MISSED |
+| 3. Every run leaves a record of each step it took, failures included | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. The record matches a hand count of what the run spent | 3 of 3 | 2/3 | 2/3 | 2/3 | MISSED |
+| 5. The old paths are unchanged | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+
+After the boundary, on `4053f67`:
+
+| Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. A known failure ends with a message, not an exception | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 2. A caller of the web service gets the session, not a 500 | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 3. Every run leaves a record of each step it took, failures included | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+| 4. The record matches a hand count of what the run spent | 3 of 3 | 2/3 | 2/3 | 2/3 | MISSED |
+| 5. The old paths are unchanged | 3 of 3 | 3/3 | 3/3 | 3/3 | MET |
+
+The three passes gave the same result for every trial in both runs. The fault trials are deterministic, and the four live-model trials passed every time, so the three columns repeat. Criterion 4 is the one miss after the boundary, and it misses on the same trial each time (`fit-card-exit`).
+
+**What the Runs Printed**
+
+Real output from pass 1, copied from the files in `results/`. Log lines are from `run_2026-11-15_2209_after.jsonl` unless it says otherwise. The one-line rows are from the `.md` next to it, written by `run_extension.py`.
+
+**Criterion 1.** The `search-down` trial. The boundary in `agent.py::run_agent` caught the `MCPError`, `agent.py::_escaped_message` wrote the text, and `runlog.py::step` wrote both lines. Before the boundary, the same trial in `run_2026-11-15_2206_before.md` ended in an exception:
+
+```text
+| 1 | search-down | MISS | raised MCPError: Couldn't call 'search_listings' over MCP: unhandled errors in a TaskGroup (1 sub-exception) | 4a2c1446 |
+```
+
+After:
+
+```json
+{"ts": "2026-11-16T03:09:28.007+00:00", "run_id": "15fd0d2e", "process": "run_extension.py", "pid": 2736597, "step": "search_listings", "input": "{'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}", "error": "MCPError: Couldn't call 'search_listings' over MCP: unhandled errors in a TaskGroup (1 sub-exception)", "duration_ms": 15.8}
+{"ts": "2026-11-16T03:09:28.007+00:00", "run_id": "15fd0d2e", "process": "run_extension.py", "pid": 2736597, "step": "run", "input": "vintage graphic tee under $30", "output": "error: The search could not be completed over MCP, so nothing else was tried. Run `python mcp_server.py` on its own to see why the server fails, then try again. (Couldn't call 'search_listings' over M…", "duration_ms": 16.1}
+```
+
+**Criterion 2.** The same `search-down` fault sent to `/ask`. The status came from `serve.py::ask`, which returns the session as JSON, and `run_extension.py::c2` read it. The runner saved the status and the first 90 characters of the `error`, so the cut at "Run `python mcp_ser" is the runner's, and the full reply body was not saved. The first row is before the boundary (`run_2026-11-15_2206_before.md`, `serve.py`'s catch-all answered 500), the second is after:
+
+```text
+| 1 | search-down via /ask | MISS | HTTP 500; error: MCPError: Couldn't call 'search_listings' over MCP: unhandled errors in a TaskGroup (1 sub | 4293b1de |
+| 1 | search-down via /ask | pass | HTTP 200; error: The search could not be completed over MCP, so nothing else was tried. Run `python mcp_ser | 1301d346 |
+```
+
+**Criterion 3.** The `model-429` trial: eight lines for a run that failed. The five `model_call` lines come from `generate.py::generate` through `runlog.py::step`, each with its `error` and `attempt`. The `search_listings` and `suggest_outfit` lines come from `agent.py::_run_loop` (the search through `mcp_client.py::call_tool`), and the `run` line from `agent.py::run_agent`:
+
+```json
+{"ts": "2026-11-16T03:09:41.898+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "search_listings", "input": "{'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}", "output": "10 listings", "duration_ms": 395.5}
+{"ts": "2026-11-16T03:09:41.898+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 1, "error": "Exception: 429 RESOURCE_EXHAUSTED. You exceeded your current quota. Please retry in 1s.", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:41.898+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 2, "error": "Exception: 429 RESOURCE_EXHAUSTED. You exceeded your current quota. Please retry in 1s.", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:41.898+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 3, "error": "Exception: 429 RESOURCE_EXHAUSTED. You exceeded your current quota. Please retry in 1s.", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:41.898+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 4, "error": "Exception: 429 RESOURCE_EXHAUSTED. You exceeded your current quota. Please retry in 1s.", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:41.899+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 5, "error": "Exception: 429 RESOURCE_EXHAUSTED. You exceeded your current quota. Please retry in 1s.", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:41.899+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "suggest_outfit", "input": "new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items", "error": "RateLimitExhausted: Still rate limited after 5 attempts. Wait a minute and try again — your key is fine.", "duration_ms": 0.5}
+{"ts": "2026-11-16T03:09:41.899+00:00", "run_id": "fdcf92e1", "process": "run_extension.py", "pid": 2736597, "step": "run", "input": "vintage graphic tee under $30", "output": "error: The search worked, but suggest_outfit is still rate limited after 5 attempts, so there is no outfit and no fit card. Wait a minute and try again.", "duration_ms": 396.4}
+```
+
+**Criterion 4.** The `fit-card-exit` trial, the miss. I predicted it before any trial ran, in the note under criterion 4 in `criteria.md`, and left the target at 3 of 3 on purpose. The outfit's request is on the record, written by `generate.py::generate` in the agent. The server process was killed during the fit card's request (`faults.py::fit_card_server_exits` starts the server through `fault_server.py` with a scripted model whose first request calls `os._exit`), so that request left no line. The score comes from `run_extension.py::c4_fault`. The clean-query trial, which passed, is the first row:
+
+```text
+| 1 | clean query | pass | 2 requests (expected 2); agent-process tokens in the log (386, 92), printed total (386, 92) | 99c5f1e8 |
+| 1 | fit-card-exit | MISS | 1 requests logged (hand count 2); tokens (120, 30) (expected (120, 30)) | d7fdfa6b |
+```
+
+```json
+{"ts": "2026-11-16T03:09:54.019+00:00", "run_id": "d7fdfa6b", "process": "run_extension.py", "pid": 2736597, "step": "search_listings", "input": "{'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}", "output": "10 listings", "duration_ms": 414.3}
+{"ts": "2026-11-16T03:09:54.019+00:00", "run_id": "d7fdfa6b", "process": "run_extension.py", "pid": 2736597, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 1, "prompt_tokens": 120, "output_tokens": 30, "output": "95 chars", "duration_ms": 0.0}
+{"ts": "2026-11-16T03:09:54.019+00:00", "run_id": "d7fdfa6b", "process": "run_extension.py", "pid": 2736597, "step": "suggest_outfit", "input": "new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items", "output": "Wear it with the dark jeans and the white sneakers, and keep the jacket for when it cools down.", "duration_ms": 0.2}
+{"ts": "2026-11-16T03:09:54.341+00:00", "run_id": "d7fdfa6b", "process": "run_extension.py", "pid": 2736597, "step": "create_fit_card", "input": "new_item=Y2K Baby Tee — Butterfly Print; outfit=Wear it with the dark jeans and the whit…", "error": "MCPError: Couldn't call 'create_fit_card' over MCP: unhandled errors in a TaskGroup (1 sub-exception)", "duration_ms": 321.8}
+{"ts": "2026-11-16T03:09:54.341+00:00", "run_id": "d7fdfa6b", "process": "run_extension.py", "pid": 2736597, "step": "run", "input": "vintage graphic tee under $30", "output": "error: The search and the outfit worked, but create_fit_card failed on the MCP server, so there is no fit card. Couldn't call 'create_fit_card' over MCP: unhandled errors in a TaskGroup (1 sub-excepti…", "duration_ms": 736.9}
+```
+
+**Criterion 5.** The two matching queries and the one that matches nothing. `run_extension.py::c5_matching` and `c5_impossible` scored them from the session `agent.py::run_agent` returned. The message in the last row comes from `agent.py::_no_results_message`, and its log lines follow:
+
+```text
+| 1 | tee | pass | error: None; item 'Y2K Baby Tee — Butterfly Print'; outfit present; fit card present | 5af6bf72 |
+| 1 | jacket | pass | error: None; item '90s Track Jacket — Navy/White Stripe'; outfit present; fit card present | e18f3935 |
+| 1 | impossible query | pass | error contains 'You could': True; no outfit and no fit card in the session: True | 73d45bff |
+```
+
+```json
+{"ts": "2026-11-16T03:10:17.696+00:00", "run_id": "73d45bff", "process": "run_extension.py", "pid": 2736597, "step": "search_listings", "input": "{'description': 'designer ballgown', 'size': 'XXS', 'max_price': None}", "output": "0 listings", "duration_ms": 395.3}
+{"ts": "2026-11-16T03:10:17.696+00:00", "run_id": "73d45bff", "process": "run_extension.py", "pid": 2736597, "step": "run", "input": "designer ballgown size XXS", "output": "error: No listings matched \"designer ballgown\" in size XXS. You could drop the size or try another one or describe the item in different words.", "duration_ms": 395.5}
+```
