@@ -100,8 +100,13 @@ async def _call(name: str, arguments: dict):
     # none of this one's environment. A tool that calls the model needs the
     # same key, model name and cache setting the caller is running with, or a
     # cache-off eval would quietly cache on the server side. Only those three
-    # are passed.
-    env = {k: os.environ[k] for k in ("GEMINI_API_KEY", "AI201_MODEL") if k in os.environ}
+    # are passed, plus the run id and the log path so the server's model call
+    # lands in the same run log under the same run (see runlog.py).
+    env = {
+        k: os.environ[k]
+        for k in ("GEMINI_API_KEY", "AI201_MODEL", "AI201_RUN_ID", "AI201_LOG_PATH")
+        if k in os.environ
+    }
     env["AI201_CACHE"] = "1" if config.CACHE_ENABLED else "0"
     params = StdioServerParameters(
         command=sys.executable,

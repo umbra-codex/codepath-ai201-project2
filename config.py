@@ -88,6 +88,9 @@ MAX_RETRIES = 5
 
 CACHE_DIR = ROOT / ".cache"
 
+# Where runlog.py writes the run log unless AI201_LOG_PATH says otherwise.
+LOG_DIR = ROOT / "logs"
+
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 

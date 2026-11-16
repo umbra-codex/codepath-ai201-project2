@@ -35,6 +35,7 @@ import sys
 import time
 
 import config
+import runlog
 
 _call_times: list[float] = []
 _session_calls = 0
@@ -291,6 +292,7 @@ def generate(
         hit = _cache_read(key)
         if hit is not None:
             _cache_hits += 1
+            runlog.write(step="cache_hit", input=prompt, output=f"{len(hit)} chars")
             return hit
 
     _check_budget()
@@ -312,9 +314,17 @@ def generate(
                 "config": call_config,
             }
 
-            response = client.models.generate_content(**kwargs)
-            _record_tokens(response)
-            text = (response.text or "").strip()
+            # One log line per request, answered or not. A 429 used a request,
+            # so it is a line too. The model call inside the MCP server is
+            # written by the server's own process, to the same file.
+            with runlog.step("model_call", input=prompt, attempt=attempt + 1) as record:
+                response = client.models.generate_content(**kwargs)
+                before = (_prompt_tokens, _output_tokens)
+                _record_tokens(response)
+                record["prompt_tokens"] = _prompt_tokens - before[0]
+                record["output_tokens"] = _output_tokens - before[1]
+                text = (response.text or "").strip()
+                record["output"] = f"{len(text)} chars"
 
             if use_cache:
                 _cache_write(key, text)

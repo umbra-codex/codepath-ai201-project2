@@ -15,6 +15,9 @@ env/
 # Cached model responses
 .cache/
 
+# Scratch run logs. The logs a test run produces go in results/ and are kept.
+logs/
+
 # OS noise
 .DS_Store
 Thumbs.db

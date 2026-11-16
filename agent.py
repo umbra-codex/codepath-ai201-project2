@@ -16,6 +16,7 @@ Build and test your three tools in `tools.py` first. Then come here.
 import re
 
 import config
+import runlog
 import trace
 from mcp_client import MCPError, call_tool
 from tools import suggest_outfit
@@ -212,6 +213,19 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     session = new_session(query, wardrobe)
     session["parsed"] = parse_query(query)
 
+    # The run log gets a line for the whole run as well as one for each step,
+    # so a run that ends early still says how it ended and how long it took.
+    runlog.start_run()
+    with runlog.step("run", input=query) as record:
+        _run_loop(session)
+        record["output"] = (
+            f"error: {session['error']}" if session["error"] else "completed"
+        )
+    return session
+
+
+def _run_loop(session: dict) -> None:
+    """The planning loop. run_agent() wraps it; the session is filled in place."""
     # Each pass runs one tool, puts its result in the session, and picks the
     # next step from what came back. None means the run is over.
     step = "search_listings"
@@ -223,11 +237,13 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         if step == "search_listings":
             parsed = session["parsed"]
             # search_listings runs on the MCP server, not as a direct call.
-            session["search_results"] = call_tool("search_listings", {
-                "description": parsed["description"],
-                "size": parsed["size"],
-                "max_price": parsed["max_price"],
-            })
+            with runlog.step("search_listings", input=parsed) as record:
+                session["search_results"] = call_tool("search_listings", {
+                    "description": parsed["description"],
+                    "size": parsed["size"],
+                    "max_price": parsed["max_price"],
+                })
+                record["output"] = f"{len(session['search_results'])} listings"
             # The branch: nothing found means stop here, before any model call.
             if not session["search_results"]:
                 session["error"] = _no_results_message(session["parsed"])
@@ -255,7 +271,9 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 session["notice"] = _EMPTY_WARDROBE_NOTICE
                 note = "empty wardrobe: general advice, notice set"
             try:
-                session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+                with runlog.step("suggest_outfit", input=inputs) as record:
+                    session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+                    record["output"] = session["outfit_suggestion"]
             except ModelUnavailable as exc:
                 session["error"] = _model_down_message(step, exc)
                 trace.step(step, inputs=inputs, note=f"ModelUnavailable, stopping: {exc}")
@@ -275,10 +293,12 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             # in the server's process, so a failure there comes back as MCPError
             # and not as ModelUnavailable.
             try:
-                session["fit_card"] = call_tool("create_fit_card", {
-                    "outfit": session["outfit_suggestion"],
-                    "new_item": item,
-                })
+                with runlog.step("create_fit_card", input=inputs) as record:
+                    session["fit_card"] = call_tool("create_fit_card", {
+                        "outfit": session["outfit_suggestion"],
+                        "new_item": item,
+                    })
+                    record["output"] = session["fit_card"]
             except MCPError as exc:
                 session["error"] = _fit_card_down_message(exc)
                 trace.step("create_fit_card (via MCP)", inputs=inputs,
@@ -287,8 +307,6 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 trace.step("create_fit_card (via MCP)", inputs=inputs,
                            returned=session["fit_card"])
             step = None
-
-    return session
 
 
 # ── running it directly ───────────────────────────────────────────────────────
