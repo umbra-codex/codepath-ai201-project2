@@ -160,27 +160,29 @@ Given the same three faults sent through `serve.py`'s `/ask`, the reply is HTTP 
 
 ## Capstone 3. Every run leaves a record of each step it took, failures included
 
-With the cache off, every run leaves one log line for each step it took, and each line names the step, what went in, what came out or how it failed, and how long it took. 3 of 3 trials, and the line count matches my hand count.
+With the cache off, and no process killed, every run leaves one log line for each step it took, and each line names the step, what went in, what came out or how it failed, and how long it took. 3 of 3 trials, and the line count matches my hand count.
 
 **The three trials:** `vintage graphic tee under $30`, which completes (6 lines: the search, the outfit's model call, the outfit, the fit card's model call, the fit card, the run); `designer ballgown size XXS`, which stops after the search (2 lines); and `model-429` (8 lines: the search, five model calls, the outfit step with an `error`, the run).
 
 **Why this target:**
-The search and the fit card run in the MCP server, a second process that exits after each call. A log written only where the loop lives would show the fit card's model call as missing. The failed run is a trial because a record that exists only for runs that finish is no use on the day one does not. The three runs end three different ways, which is why they are the three trials. The log write is unconditional and swallows its own errors, so the only thing that can vary is the run itself, which is why I allow no misses. The counts come from reading the code. I smoke-ran the harness once before writing them, and that run is not a trial. The `run` line already exists at `d8dfb41`, so I expect this to pass before and after.
+The search and the fit card run in the MCP server, a second process that exits after each call. A log written only where the loop lives would show the fit card's model call as missing. The failed run is a trial because a record that exists only for runs that finish is no use on the day one does not. The three runs end three different ways, which is why they are the three trials. The log write is unconditional and swallows its own errors, so in these three runs the only thing that can vary is the run itself, which is why I allow no misses. The counts come from reading the code. I smoke-ran the harness once before writing them, and that run is not a trial. The `run` line already exists at `d8dfb41`, so I expect this to pass before and after.
 
 ---
 
 ## Capstone 4. The record matches a hand count of what the run spent
 
-The model requests in the record equal my hand count for the same run, retries included, and the tokens in the record equal the tokens I scripted, or the total the program prints for the lines it wrote itself. 3 of 3 trials.
+The model requests in the record equal my hand count for the same run, retries included, and the tokens in the record equal the tokens I scripted or, in the first trial, the total the program prints, which counts only the agent's own process. 3 of 3 trials.
 
-**The three trials:** `AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'`, which should be 2 requests, with the tokens on the `model_call` lines whose `process` is `app.py` equal to the total the program prints on exit (the server's call is the other line and is not in that total). If the log shows a 429 retry, the hand count adds it and the diagnosis says so. `model-429`, which should be 5 requests and 0 tokens. `fit-card-429`, where the outfit step succeeds on a scripted answer of 120 prompt and 30 output tokens and then the server's five requests are all pushed back, which should be 6 requests and 120 plus 30 tokens.
+**The three trials:** `AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'`, which should be 2 requests, with the tokens on the `model_call` lines whose `process` is `app.py` equal to the total the program prints on exit (the server's call is the other line and is not in that total). If the log shows a 429 retry, the hand count adds it and the diagnosis says so. `model-429`, which should be 5 requests and 0 tokens. `fit-card-exit`, where the outfit step succeeds on a scripted answer of 120 prompt and 30 output tokens and then the MCP server process dies in the middle of the fit card's model request, which should be 2 requests (the outfit's, and the one the server was making when it died) and 120 plus 30 tokens.
 
 **Why this target:**
-The program's own call counter lives in one process and prints "1 model calls" for a run that made 2, because the fit card's call happens in the server. The log is the only place both are counted. A 429 used a request, so retries count. A cache hit does not, so the cache is off. I expect this to pass before the boundary is built, because the log came first. It is here because every cost number in the write-up comes from this record, and a record I have not checked gives numbers I cannot trust.
+The program's own call counter lives in one process and prints "1 model calls" for a run that made 2, because the fit card's call happens in the server. The log is the only place both are counted, as long as no process is killed. A 429 used a request, so retries count. A cache hit does not, so the cache is off. I expect trials 1 and 2 to pass before the boundary is built, because the log came first. I expect trial 3 to miss, before and after. A log line is written when a model call returns or raises, and a process that is killed does neither, so the record will show 1 request for the 2 that were sent. I saw that in a fault run, and `results/failure_fit-card-exit.jsonl` keeps it (a smoke run, not a trial). I am keeping the target at 3 of 3 anyway. Lowering a target because I expect to miss it is not what a target is for, and the miss is the finding. This record is here because every cost number in the write-up comes from it, and a record I have not checked gives numbers I cannot trust.
+
+> **Revised before any trial of these criteria was run:** the third trial was `fit-card-429`, which the log counts correctly. It is now `fit-card-exit`, the one case where I already knew the log undercounts, so that this criterion can fail for a real reason. The target is the same. It gives up the one trial where retries happen inside the server, which the log counted correctly in a smoke run (6 requests). Retries in the agent's own process are still covered by `model-429`, here and in Capstone 3. The earlier version is in commit `e2e2ff9`.
 
 ---
 
-## Capstone 5. The old paths still work
+## Capstone 5. The old paths are unchanged
 
 Given a matching query, the agent runs all three tools and returns a fit card with `error` None. Given a query that matches nothing, it stops before `suggest_outfit` with an `error` that contains `You could`. 3 of 3 trials.
 
