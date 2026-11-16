@@ -128,3 +128,63 @@ empty-wardrobe prompt is the problem.
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+
+# Capstone acceptance criteria: FitFindr, shape B (harden against failure)
+
+Five criteria for the hardening extension. They were written after the extension was built (the run log in `68b130a`, the fault harness in `d8dfb41`, the boundary in `7c5fc0e`) and before any trial was run or counted. The before run is made at `d8dfb41`, the commit before the boundary, and the after run at `7c5fc0e`.
+
+---
+
+## Capstone 1. A known failure ends with a message, not an exception
+
+Given a failure on one of the three paths the agent already knows can fail, `run_agent` returns a session whose `error` contains the name of the step that failed (`search` or `suggest_outfit`) and one thing the user can do (try again, wait, restart, or run the server on its own), and it raises nothing. 3 of 3 trials.
+
+**The three trials:** one fault each, injected from outside the production code with `faults.py`. Every model request is answered 429 past `MAX_RETRIES` (`model-429`). `mcp_server.py` cannot start, so the search fails (`search-down`). The session's request budget is already spent, so `QuotaGuard` fires (`budget`).
+
+**Why this target:**
+At `d8dfb41` all three failures leave `run_agent` as an exception, so the before run should score 0 of 3, each with a different exception type. I use three faults and not one fault three times, because one fault repeated is one result counted three times. Nothing here depends on a live model, so a path either sets `error` or it does not, and 3 of 3 is the only target that fits.
+
+---
+
+## Capstone 2. A caller of the web service gets the session, not a 500
+
+Given the same three faults sent through `serve.py`'s `/ask`, the reply is HTTP 200 with the session as JSON and a non-empty `error`, not a 500 carrying an exception name. 3 of 3 trials.
+
+**The three trials:** `model-429`, `search-down` and `budget`, each one run as `python faults.py --one <id> --serve`.
+
+**Why this target:**
+`serve.py` catches whatever escapes `run_agent` and answers 500 with the exception text, and that is what a caller would see. Its own docstring says `/ask` returns the session with `error` in it, so a 200 is the documented behavior. The before run should score 0 of 3, each a 500 with `ExceptionType: text` in the body. Capstone 1 looks at the function. This one looks at the surface a user reaches.
+
+---
+
+## Capstone 3. Every run leaves a record of each step it took, failures included
+
+With the cache off, every run leaves one log line for each step it took, and each line names the step, what went in, what came out or how it failed, and how long it took. 3 of 3 trials, and the line count matches my hand count.
+
+**The three trials:** `vintage graphic tee under $30`, which completes (6 lines: the search, the outfit's model call, the outfit, the fit card's model call, the fit card, the run); `designer ballgown size XXS`, which stops after the search (2 lines); and `model-429` (8 lines: the search, five model calls, the outfit step with an `error`, the run).
+
+**Why this target:**
+The search and the fit card run in the MCP server, a second process that exits after each call. A log written only where the loop lives would show the fit card's model call as missing. The failed run is a trial because a record that exists only for runs that finish is no use on the day one does not. The three runs end three different ways, which is why they are the three trials. The log write is unconditional and swallows its own errors, so the only thing that can vary is the run itself, which is why I allow no misses. The counts come from reading the code. I smoke-ran the harness once before writing them, and that run is not a trial. The `run` line already exists at `d8dfb41`, so I expect this to pass before and after.
+
+---
+
+## Capstone 4. The record matches a hand count of what the run spent
+
+The model requests in the record equal my hand count for the same run, retries included, and the tokens in the record equal the tokens I scripted, or the total the program prints for the lines it wrote itself. 3 of 3 trials.
+
+**The three trials:** `AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'`, which should be 2 requests, with the tokens on the `model_call` lines whose `process` is `app.py` equal to the total the program prints on exit (the server's call is the other line and is not in that total). If the log shows a 429 retry, the hand count adds it and the diagnosis says so. `model-429`, which should be 5 requests and 0 tokens. `fit-card-429`, where the outfit step succeeds on a scripted answer of 120 prompt and 30 output tokens and then the server's five requests are all pushed back, which should be 6 requests and 120 plus 30 tokens.
+
+**Why this target:**
+The program's own call counter lives in one process and prints "1 model calls" for a run that made 2, because the fit card's call happens in the server. The log is the only place both are counted. A 429 used a request, so retries count. A cache hit does not, so the cache is off. I expect this to pass before the boundary is built, because the log came first. It is here because every cost number in the write-up comes from this record, and a record I have not checked gives numbers I cannot trust.
+
+---
+
+## Capstone 5. The old paths still work
+
+Given a matching query, the agent runs all three tools and returns a fit card with `error` None. Given a query that matches nothing, it stops before `suggest_outfit` with an `error` that contains `You could`. 3 of 3 trials.
+
+**The three trials:** two matching queries for different items, `vintage graphic tee under $30` (a price ceiling) and `90s track jacket in size M` (a size filter and no price), and the impossible query `designer ballgown size XXS`, which has no price ceiling so that the description is what finds nothing.
+
+**Why this target:**
+The boundary in `run_agent` catches three exception types around the loop. One written too wide could swallow the good path or reword a message I already tested. I allow no misses because these paths worked before and the extension was not supposed to touch them. A live model is involved, so a try can fail for a reason unrelated to my change. A miss is `error` None with a wrong or missing card. A failure of the live model is an `error` that names the model, and the diagnosis says so. The before run should score 3 of 3.
