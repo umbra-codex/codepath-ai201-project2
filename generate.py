@@ -61,6 +61,16 @@ class ModelUnavailable(Exception):
     """
 
 
+class RateLimitExhausted(RuntimeError):
+    """
+    Raised when the service is still pushing back after MAX_RETRIES attempts.
+
+    It was a bare RuntimeError. It is a subclass now, with the same text, so
+    the agent can catch this one case without also catching every other
+    RuntimeError (the loop-runaway check in trace.py is one).
+    """
+
+
 # ─── Cache ───────────────────────────────────────────────────────────────────
 
 
@@ -350,7 +360,7 @@ def generate(
             )
             time.sleep(backoff)
 
-    raise RuntimeError(
+    raise RateLimitExhausted(
         f"Still rate limited after {config.MAX_RETRIES} attempts. Wait a "
         f"minute and try again — your key is fine.\nLast error: {last_error}"
     )

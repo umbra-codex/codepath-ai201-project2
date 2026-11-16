@@ -20,7 +20,7 @@ import runlog
 import trace
 from mcp_client import MCPError, call_tool
 from tools import suggest_outfit
-from generate import ModelUnavailable
+from generate import ModelUnavailable, QuotaGuard, RateLimitExhausted
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -152,6 +152,36 @@ def _fit_card_down_message(exc: MCPError) -> str:
     )
 
 
+def _escaped_message(exc: Exception) -> str:
+    """
+    Say what an exception that escaped a step cost, and give one action.
+
+    The type says where it came from. MCPError only escapes from the search,
+    because create_fit_card catches its own. QuotaGuard and RateLimitExhausted
+    only escape from suggest_outfit, because the fit card's model call runs in
+    the server's process and comes back as an MCPError.
+    """
+    if isinstance(exc, MCPError):
+        return (
+            "The search could not be completed over MCP, so nothing else was "
+            "tried. Run `python mcp_server.py` on its own to see why the server "
+            f"fails, then try again. ({str(exc).splitlines()[0]})"
+        )
+    if isinstance(exc, QuotaGuard):
+        return (
+            f"The search worked, but suggest_outfit stopped: this session "
+            f"already made {config.SESSION_REQUEST_BUDGET} model requests, the "
+            f"budget in config.py, so there is no outfit and no fit card. "
+            f"Restart the program. If you need more, raise "
+            f"SESSION_REQUEST_BUDGET in config.py."
+        )
+    return (
+        f"The search worked, but suggest_outfit is still rate limited after "
+        f"{config.MAX_RETRIES} attempts, so there is no outfit and no fit "
+        f"card. Wait a minute and try again."
+    )
+
+
 # ── planning loop ─────────────────────────────────────────────────────────────
 
 def run_agent(query: str, wardrobe: dict) -> dict:
@@ -217,7 +247,17 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     # so a run that ends early still says how it ended and how long it took.
     runlog.start_run()
     with runlog.step("run", input=query) as record:
-        _run_loop(session)
+        try:
+            _run_loop(session)
+        except (MCPError, QuotaGuard, RateLimitExhausted) as exc:
+            # The one failure boundary. Only these three are caught: they are
+            # the known failures that used to leave this function as
+            # exceptions. Anything else, including trace.check_iterations
+            # stopping a runaway loop, still raises. The session is filled in
+            # place, so what already succeeded (selected_item and so on) stays.
+            session["error"] = _escaped_message(exc)
+            trace.step("run_agent", inputs=session["query"],
+                       note=f"{type(exc).__name__}, stopping: {str(exc).splitlines()[0]}")
         record["output"] = (
             f"error: {session['error']}" if session["error"] else "completed"
         )
