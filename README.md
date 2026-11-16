@@ -734,3 +734,74 @@ Out of scope. I thought about three things and I'm not doing them:
 - Replacing the per-call MCP subprocess with one long-lived connection. It is why the fit card's model call is missing from the call count, but fixing it means reworking how `mcp_client.py` talks to the server, and the starter says that file is given.
 - Changing the retry or rate-limit policy, or adding a fallback model. The boundary reports a failure and does not try harder to avoid one.
 - Touching search, the prompts, the fit card wording or the web page.
+
+**The Run Path**
+
+Local, with logs. `RUNNING.md` has it at the top: what the environment needs, the setup from a clean checkout, and one command, `AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'`. The run writes its record to `logs/fitfindr.jsonl`.
+
+I tested it by cloning the repo from GitHub into a new folder and following `RUNNING.md` line by line: a new virtual environment with `python3.13`, `pip install -r requirements.txt`, `.env` from `.env.example`, then `python test.py` (10 passed) and the command above (a fit card, and a six-line log written by two processes). It did not fail, and the reason is that I had already found two gaps by reading the files, before the clone. `.env.example`, which `RUNNING.md` and `test.py` both tell a reader to copy, was not in the repo. And the default `python3` on my machine is 3.14, which `requirements.txt` rules out. I added the file (`a8223e8`) and wrote the 3.14 warning into `RUNNING.md` before cloning, so the clone passed. A reader who cloned before those two commits would have hit the first, and the second too if their `python3` is 3.14. I did not try the 3.14 failure myself, so "rules out 3.14" is what `requirements.txt` says and not something I observed.
+
+**Instrumentation**
+
+Every run writes JSON lines to `logs/fitfindr.jsonl`, or to the file `AI201_LOG_PATH` names. There is one line for each step (`search_listings`, `suggest_outfit`, `create_fit_card`), one for each model request, and one `run` line that closes the run. Each line has a timestamp, the run id, the process that wrote it, the input, the output or the error, and the duration in milliseconds. A model request line also has the attempt number and the tokens the service reported. The search and the fit card run in the MCP server, a second process, so it writes to the same file under the same run id. That is how the fit card's model call gets counted, and the program's own counter does not: it prints "1 model calls" for a run that made two. The field table is in `RUNNING.md` and the logger is `runlog.py`.
+
+Twelve entries from two ordinary runs, copied from `results/cost_2026-11-15_2011.jsonl`. The first six are `vintage graphic tee under $30` and the next six are `90s track jacket in size M`. Each run has the same six lines in the same order: the search, the outfit's model call, the outfit step, the fit card's model call (written by `mcp_server.py`), the fit card step, and the run. The agent's own lines say `measure_cost.py` because that script started the runs.
+
+```json
+{"ts": "2026-11-16T01:11:57.317+00:00", "run_id": "5d0cdcbb", "process": "measure_cost.py", "pid": 2647999, "step": "search_listings", "input": "{'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}", "output": "10 listings", "duration_ms": 630.0}
+{"ts": "2026-11-16T01:11:58.885+00:00", "run_id": "5d0cdcbb", "process": "measure_cost.py", "pid": 2647999, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M  Their wardro…", "attempt": 1, "prompt_tokens": 386, "output_tokens": 111, "output": "547 chars", "duration_ms": 1216.0}
+{"ts": "2026-11-16T01:11:58.885+00:00", "run_id": "5d0cdcbb", "process": "measure_cost.py", "pid": 2647999, "step": "suggest_outfit", "input": "new_item=Y2K Baby Tee — Butterfly Print; wardrobe=10 items", "output": "Outfit one plays up the Y2K streetwear vibe by pairing the butterfly baby tee with your baggy straight-leg jeans. Add the black cropped zip hoodie layered over top if it gets chilly, and finish the lo…", "duration_ms": 1568.2}
+{"ts": "2026-11-16T01:12:00.574+00:00", "run_id": "5d0cdcbb", "process": "mcp_server.py", "pid": 2648009, "step": "model_call", "input": "Write a caption for a post about this thrift find.  The item: Y2K Baby Tee — Butterfly Print; category: tops; colors: white, pink, purple; style: y2k, vintage, graphic tee, cottagecore; size: S/M Pric…", "attempt": 1, "prompt_tokens": 286, "output_tokens": 67, "output": "310 chars", "duration_ms": 982.9}
+{"ts": "2026-11-16T01:12:00.848+00:00", "run_id": "5d0cdcbb", "process": "measure_cost.py", "pid": 2647999, "step": "create_fit_card", "input": "new_item=Y2K Baby Tee — Butterfly Print; outfit=Outfit one plays up the Y2K streetwear v…", "output": "I just scored this amazing Y2K butterfly baby tee on depop for only $18 and I am completely obsessed. I love styling it with baggy straight-leg jeans and chunky white sneakers for a total throwback st…", "duration_ms": 1962.2}
+{"ts": "2026-11-16T01:12:00.848+00:00", "run_id": "5d0cdcbb", "process": "measure_cost.py", "pid": 2647999, "step": "run", "input": "vintage graphic tee under $30", "output": "completed", "duration_ms": 4161.1}
+{"ts": "2026-11-16T01:12:09.293+00:00", "run_id": "1a136770", "process": "measure_cost.py", "pid": 2647999, "step": "search_listings", "input": "{'description': '90s track jacket', 'size': 'M', 'max_price': None}", "output": "5 listings", "duration_ms": 443.9}
+{"ts": "2026-11-16T01:12:10.282+00:00", "run_id": "1a136770", "process": "measure_cost.py", "pid": 2647999, "step": "model_call", "input": "Someone is thinking about buying this thrifted item: 90s Track Jacket — Navy/White Stripe; category: outerwear; colors: navy, white; style: 90s, vintage, athletic, streetwear; size: M; brand: Champion…", "attempt": 1, "prompt_tokens": 387, "output_tokens": 126, "output": "660 chars", "duration_ms": 988.7}
+{"ts": "2026-11-16T01:12:10.282+00:00", "run_id": "1a136770", "process": "measure_cost.py", "pid": 2647999, "step": "suggest_outfit", "input": "new_item=90s Track Jacket — Navy/White Stripe; wardrobe=10 items", "output": "Grab this Champion track jacket immediately. It is an absolute wardrobe MVP.   Outfit one leans hard into retro streetwear. Pair the track jacket with the white ribbed tank top layered underneath and …", "duration_ms": 989.1}
+{"ts": "2026-11-16T01:12:11.663+00:00", "run_id": "1a136770", "process": "mcp_server.py", "pid": 2648121, "step": "model_call", "input": "Write a caption for a post about this thrift find.  The item: 90s Track Jacket — Navy/White Stripe; category: outerwear; colors: navy, white; style: 90s, vintage, athletic, streetwear; size: M; brand:…", "attempt": 1, "prompt_tokens": 304, "output_tokens": 69, "output": "348 chars", "duration_ms": 719.4}
+{"ts": "2026-11-16T01:12:11.944+00:00", "run_id": "1a136770", "process": "measure_cost.py", "pid": 2647999, "step": "create_fit_card", "input": "new_item=90s Track Jacket — Navy/White Stripe; outfit=Grab this Champion track jacket immediat…", "output": "Scored this vintage 90s Champion track jacket on poshmark for only $45 and I am completely obsessed. It has the ultimate retro athletic vibe that instantly elevates every casual streetwear look I thro…", "duration_ms": 1661.3}
+{"ts": "2026-11-16T01:12:11.944+00:00", "run_id": "1a136770", "process": "measure_cost.py", "pid": 2647999, "step": "run", "input": "90s track jacket in size M", "output": "completed", "duration_ms": 3095.0}
+```
+
+Failed runs, two of them, because they fail in two different ways.
+
+A query that matches nothing, `designer ballgown size XXS under $5` (run 11 of the cost measurement). No step raised, so there is no `error` field. The search found 0 listings, and the `run` line's `output` starts with `error:` and carries the message the user sees:
+
+```json
+{"ts": "2026-11-16T01:13:51.594+00:00", "run_id": "b24fef1d", "process": "measure_cost.py", "pid": 2647999, "step": "search_listings", "input": "{'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}", "output": "0 listings", "duration_ms": 507.1}
+{"ts": "2026-11-16T01:13:51.594+00:00", "run_id": "b24fef1d", "process": "measure_cost.py", "pid": 2647999, "step": "run", "input": "designer ballgown size XXS under $5", "output": "error: No listings matched \"designer ballgown\" in size XXS under $5. You could drop the size or try another one, raise the price limit, or describe the item in different words.", "duration_ms": 507.3}
+```
+
+A step that raised. The MCP server could not start, so the search failed (`python faults.py --one search-down`, which points the client at a server file that does not exist). The search step carries an `error` field, and the `run` line closes with the boundary's message. The step line is written before the exception moves on, so the record exists whether or not anything catches it:
+
+```json
+{"ts": "2026-11-16T01:35:15.216+00:00", "run_id": "59dc8161", "process": "faults.py", "pid": 2663219, "step": "search_listings", "input": "{'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}", "error": "MCPError: Couldn't call 'search_listings' over MCP: unhandled errors in a TaskGroup (1 sub-exception)", "duration_ms": 344.4}
+{"ts": "2026-11-16T01:35:15.216+00:00", "run_id": "59dc8161", "process": "faults.py", "pid": 2663219, "step": "run", "input": "vintage graphic tee under $30", "output": "error: The search could not be completed over MCP, so nothing else was tried. Run `python mcp_server.py` on its own to see why the server fails, then try again. (Couldn't call 'search_listings' over M…", "duration_ms": 344.7}
+```
+
+Two limits in that record. The `error` says "unhandled errors in a TaskGroup (1 sub-exception)", which hides the real cause: the server file was not found. Python printed that on stderr and the log never saw it, so the log says that the search failed and not why. The other limit is that `process` is the name of the script that was started, so the same agent logs as `app.py`, `measure_cost.py` or `faults.py` depending on who ran it.
+
+`results/failure_model-429.jsonl` has a third failure, kept and not pasted: a model that answers 429 five times. It is eight lines. The search, then five `model_call` lines each with an `error` and an `attempt` from 1 to 5, then the outfit step with `error: RateLimitExhausted`, then the `run` line. Both injected runs came from `faults.py`, which replaces the model and the server from outside, so no model was called. The 429 run used a fake clock, so its durations do not include the 32 seconds of waiting a real one would spend.
+
+**What It Costs**
+
+One run costs 2 model requests, about 825 tokens (658.5 prompt and 166.3 output on average), and 3.4 seconds. Those are the averages of ten runs. The cost that matters for this system is requests and tokens, because the model calls are the only part that uses a metered service. I did not turn the tokens into dollars, because I have no measured price to apply. The tokens are what the service reported, not an estimate.
+
+How I measured it: `python measure_cost.py` runs the agent ten times through `run_agent()` with the cache off. It uses the five example queries that match something, twice each, and waits 8 seconds between runs so the rate limit adds no waiting. It adds up requests and tokens from the `model_call` lines in the run log, from both processes, so the fit card's request is included. Seconds are the `run` line's own duration. The runs were made on commit `e2e2ff9`, Python 3.13.15 on Linux, `gemini-3.5-flash-lite`, temperature 0.9, in a fresh virtual environment from `requirements.txt` (`mcp` 1.30.0 and `google-genai` 1.75.0, taken from that install's output, since the summary file does not record package versions). The summary is `results/cost_2026-11-15_2011.md` and the log is the `.jsonl` next to it.
+
+| Run | Query | Requests | Prompt tokens | Output tokens | Seconds | Error |
+|---|---|---|---|---|---|---|
+| 1 | vintage graphic tee under $30 | 2 | 672 | 178 | 4.2 |  |
+| 2 | 90s track jacket in size M | 2 | 691 | 195 | 3.1 |  |
+| 3 | silk slip dress in midi length under $40 | 2 | 654 | 147 | 3.1 |  |
+| 4 | platform sneakers size 8 | 2 | 655 | 171 | 3.1 |  |
+| 5 | denim jacket under $50 | 2 | 635 | 157 | 3.0 |  |
+| 6 | vintage graphic tee under $30 | 2 | 662 | 170 | 3.3 |  |
+| 7 | 90s track jacket in size M | 2 | 659 | 168 | 3.1 |  |
+| 8 | silk slip dress in midi length under $40 | 2 | 658 | 148 | 5.5 |  |
+| 9 | platform sneakers size 8 | 2 | 669 | 179 | 3.1 |  |
+| 10 | denim jacket under $50 | 2 | 630 | 150 | 3.0 |  |
+| 11 (failed run, not in the average) | designer ballgown size XXS under $5 | 0 | 0 | 0 | 0.5 | No listings matched "designer ballgown" in size XXS under $5. You coul |
+
+Total tokens per run ranged from 780 to 886, and seconds from 3.0 to 5.5. Run 8 is the 5.5: its fit card's model call took 3.3 seconds, where the average for that call is 1.0. It still made 2 requests, so there was no retry. Model calls account for 1.9 of the 3.4 seconds (0.9 in the agent, 1.0 in the server). The rest looks like the two trips to the MCP server, each of which starts a new Python process. In run 1 the search took 0.6 seconds, and the fit card step took 2.0 seconds, of which its model call was 1.0.
+
+This is the cost of a run that completes. A query that matches nothing makes 0 requests and took 0.5 seconds (run 11). A run that gets rate limited costs more: each 429 counts as a request in the log, so the outfit step alone can spend 5 requests and return nothing. Ten runs on one day against one model is a small sample, and the output tokens vary from run to run (147 to 195 here, at the same temperature).
