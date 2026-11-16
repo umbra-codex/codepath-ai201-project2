@@ -585,7 +585,7 @@ No criterion is missed after the fix. All five met their targets before it and a
 
 - **The criterion 5 fix is unproven:** it went from 4 of 5 to 5 of 5, and five tries can't tell a prompt that slips one time in five from one that never does. I'd run the empty-wardrobe scenario 30 times with each prompt. I stopped at five because my criteria are written out of five, and each try is two model calls against a limit of 15 a minute.
 - **The new prompt bans more than the criterion does:** it forbids "your" for the listed item and in phrases like "over your shoulders". I'd add a scenario that needs one of those and read what the model writes without it. I stopped because the assignment is one change, and loosening the wording would be a second.
-- **Three failures still leave `run_agent` as exceptions:** a rate limit that outlasts five retries (`RuntimeError`), the session budget (`QuotaGuard`), and an MCP server that won't start at the search step (`MCPError`). None of them sets `session["error"]`, so `serve.py` answers with a 500 and `run_eval.py` logs a crash. I'd catch each one in `run_agent` with its own message. I stopped at the three failures Milestone 2 names.
+- **Three failures still leave `run_agent` as exceptions:** a rate limit that outlasts five retries (`RuntimeError`), the session budget (`QuotaGuard`), and an MCP server that won't start at the search step (`MCPError`). None of them sets `session["error"]`, so `serve.py` answers with a 500 and `run_eval.py` logs a crash. I'd catch each one in `run_agent` with its own message. I stopped at the three failures Milestone 2 names. Since then: the capstone did exactly this (see **The Improvement** under Capstone), so this bullet describes how the project stood at the end of that unit.
 - **Criterion 4's target is too easy:** 40 of 40 fit cards across both runs name the price once and the platform once. I'd hold it to 5 of 5. I left the target alone because it was set in unit 3, and the only criterion I revised is one that couldn't be measured.
 - **`check_handoff.py` only looks at `new_item`:** a wrong wardrobe or outfit argument would pass it. I'd record every argument. I stopped because criterion 3 is about the item.
 - **The trace prints on every run, with or without `--trace`:** `trace.step()` in the starter's `trace.py` always prints. I'd make it print only when `--trace` asks for it. I left the starter file as it came.
@@ -784,7 +784,7 @@ Two limits in that record. The `error` says "unhandled errors in a TaskGroup (1 
 
 **What It Costs**
 
-One run costs 2 model requests, about 825 tokens (658.5 prompt and 166.3 output on average), and 3.4 seconds. Those are the averages of ten runs. The cost that matters for this system is requests and tokens, because the model calls are the only part that uses a metered service. I did not turn the tokens into dollars, because I have no measured price to apply. The tokens are what the service reported, not an estimate.
+One run costs 2 model requests, about 825 tokens (658.5 prompt and 166.3 output on average), and 3.4 seconds. Those are the averages of ten runs. The cost that matters for this system is requests and tokens, because the model calls are the only part that uses a metered service. I did not measure a dollar figure. The tokens are what the service reported, and the dollar cost for a hundred people below multiplies them by the vendor's listed rate.
 
 How I measured it: `python measure_cost.py` runs the agent ten times through `run_agent()` with the cache off. It uses the five example queries that match something, twice each, and waits 8 seconds between runs so the rate limit adds no waiting. It adds up requests and tokens from the `model_call` lines in the run log, from both processes, so the fit card's request is included. Seconds are the `run` line's own duration. The runs were made on commit `e2e2ff9`, Python 3.13.15 on Linux, `gemini-3.5-flash-lite`, temperature 0.9, in a fresh virtual environment from `requirements.txt` (`mcp` 1.30.0 and `google-genai` 1.75.0, taken from that install's output, since the summary file does not record package versions). The summary is `results/cost_2026-11-15_2011.md` and the log is the `.jsonl` next to it.
 
@@ -806,9 +806,18 @@ Total tokens per run ranged from 780 to 886, and seconds from 3.0 to 5.5. Run 8 
 
 This is the cost of a run that completes. A query that matches nothing makes 0 requests and took 0.5 seconds (run 11). A run that gets rate limited costs more: each 429 counts as a request in the log, so the outfit step alone can spend 5 requests and return nothing. Ten runs on one day against one model is a small sample, and the output tokens vary from run to run (147 to 195 here, at the same temperature).
 
+For a hundred people a day, at one run each, this costs about 6 cents a day, or about $1.84 over 30 days. The arithmetic, using the averages above and Google's listed rate for `gemini-3.5-flash-lite` on the paid standard tier, $0.30 per million input tokens and $2.50 per million output tokens ([Gemini API pricing page](https://ai.google.dev/gemini-api/docs/pricing)):
+
+- 100 runs × 658.5 prompt tokens = 65,850 prompt tokens, and 65,850 × $0.30 / 1,000,000 = $0.0198
+- 100 runs × 166.3 output tokens = 16,630 output tokens, and 16,630 × $2.50 / 1,000,000 = $0.0416
+- $0.0198 + $0.0416 = $0.0613 a day, and $0.0613 × 30 = $1.84
+- The same 100 runs make 200 model requests and take about 345 seconds of run time (100 × 3.45, the unrounded mean behind the 3.4), which `serve.py` would handle one at a time
+
+The price is the vendor's listed rate and was not measured by me. The one run per person is my assumption, and the cost scales with it: five runs each would be about 31 cents a day. My token counts are the prompt and candidate counts the service reported. If this model bills separate thinking tokens, they are not in my number, and I did not check whether it reports any.
+
 **Run Log**
 
-`run_extension.py` runs the fifteen trials, three for each criterion, scores each one against what the criterion says counts as a pass, and does the whole pass three separate times, so a cell is the number of trials that passed out of 3. The three passes run one after another in one process, so the pacing state in `generate.py` carries across them. No scored result depends on it. The failure trials are triggered on purpose with `faults.py`, which breaks one thing from outside the production code and calls no model. The four trials that need the model (the clean query in criteria 3 and 4, and the two matching queries in criterion 5) call the real one with the cache off. The before run is on `d8dfb41`, the commit before the boundary, taken from a git worktree. `run_extension.py` did not exist then (it was added in `4053f67`), so I copied it into the worktree and ran it there with the main virtual environment's Python. The after run is on `4053f67`. The criteria name `7c5fc0e` for the after run. `4053f67` has the same agent code and adds the runner and the docs. Both are in `results/` as `run_2026-11-15_2206_before` and `run_2026-11-15_2209_after`, each with a `.md` and a `.jsonl`.
+`run_extension.py` runs the fifteen trials, three for each criterion, scores each one against what the criterion says counts as a pass, and does the whole pass three separate times, so a cell is the number of trials that passed out of 3. The three passes run one after another in one process, so the pacing state in `generate.py` carries across them. No scored result depends on it. The failure trials are triggered on purpose with `faults.py`, which breaks one thing from outside the production code and calls no model. The four trials that need the model (the clean query in criteria 3 and 4, and the two matching queries in criterion 5) call the real one with the cache off. The before run is on `d8dfb41`, the commit before the boundary, taken from a git worktree. `run_extension.py` did not exist then (it was added in `4053f67`), so I copied it into the worktree and ran it there with the main virtual environment's Python. The after run is on `4053f67`. The criteria name `7c5fc0e` for the after run. `4053f67` has the same agent code and adds the runner and the docs. `git log` shows the revision of criterion 4 (`c67a04e`) after three results commits (`9e28ce9`, `4134b12`, `b4f047c`). Those are the cost measurement and two harness smoke logs, and none of them is a trial of the criteria. The first trial ran after the revision, at 22:06 on the day of the commits. Both are in `results/` as `run_2026-11-15_2206_before` and `run_2026-11-15_2209_after`, each with a `.md` and a `.jsonl`.
 
 What I ran to get each number:
 
@@ -944,3 +953,50 @@ The trade is that a failure which was an HTTP 500 is now a 200 with `error` in t
 The boundary also changed what the user reads when the session budget runs out. `generate.py::_check_budget` says that this usually means a loop is running away and to find it before raising the number. The boundary's message says to restart the program, or to raise `SESSION_REQUEST_BUDGET` if more is needed. A budget hit is normally a loop bug, so the new text points the user toward the ceiling and away from the loop. Only the first line of the original text survives, in the log's `error` field.
 
 The boundary catches by type on purpose. The tuple leaves out the bare `RuntimeError` that `trace.check_iterations` raises, so a runaway loop still stops the run. A new kind of failure would also still escape.
+
+**What's Still Broken**
+
+One criterion is still missed, and a few other things are weak or unproven. I did not do any of the stretch items (a deadline on model calls, a latency breakdown across runs, a load test, a second run path).
+
+- **Criterion 4, missed (2 of 3 in every pass):** a model call whose process is killed mid-request leaves no log line. I'd write the model-call line before the request is sent and the result in a second line, so a killed process still leaves a record, and count requests from the first line. I stopped because that changes what a line means. Criterion 3's counts would change (a clean run from 6 lines to 8, `model-429` from 8 to 13) and so would criterion 4's hand counts. I would rewrite those criteria first and then make the change. Rewriting them after seeing the miss is not a revision that counts.
+- **Criterion 3 was too easy:** it passed 3 of 3 before and after. I'd tighten it to 4 of 4 by adding `fit-card-exit` with 6 lines expected, and it would miss for the same reason as criterion 4. I left it because I wrote it as a guard and said so before the runs. I would leave criterion 5 alone. It was there to catch a boundary that swallows the good path, and the boundary did not.
+- **Criterion 4's token check can barely fail:** in the first trial the log's tokens and the printed total come from the same counter, so the check fails only if a log line is dropped. Only the request count in that trial can catch a mistake. I'd compare the tokens against something the log does not feed, such as a scripted reply with a known count. I found this in review before the runs and kept the trial because the request count still has teeth.
+- **The log says the search failed and not why:** the real cause of `search-down`, a missing server file, went to stderr, and the log's `error` says only "unhandled errors in a TaskGroup". I'd capture the server's stderr into the log line. I stopped because the fix is in `mcp_client.py`, which the starter says is given and which I touched only to pass on two environment names.
+- **The boundary's budget message points the wrong way:** `generate.py` says a budget hit usually means a loop is running away, and the boundary's message says to restart or raise `SESSION_REQUEST_BUDGET`. I'd put "look for a loop first" back into the message. I found it in review after the runs, and changing the message now would make the after run describe code I no longer have.
+- **Failures look like successes to anything that checks only the status or the exit code:** HTTP 200 and a command-line exit of 0. I'd keep the 200, which criterion 2 requires, and make the command line exit 1 when `error` is set. I have not, because I only read that behavior in `app.py` and never measured it, and I wanted the boundary measured on its own.
+
+**What I'd Do Next**
+
+First I would write the model-call line before the request is sent, and rewrite criteria 3 and 4 around it with a killed server as a trial in both. I would start there because it is the one criterion I missed, and because every cost number in this README is added up from that log.
+
+**How I Used AI**
+
+The earlier project's How I Used AI is above and stays where it is. This one covers the capstone.
+
+Claude (Claude Code) wrote the code, the test runner, the criteria and the README text from my direction, one milestone at a time. After a second model reviewed a milestone and it passed, Claude made the commits and pushes under my account. The second model is Isis, a Hermes agent running `deepseek-v4.1-flash`. She reviewed every milestone before I committed it, and some pieces more than once. I picked the shape and what was out of scope, said no to the stretch items, decided that the criteria get committed before anything runs, chose the change to criterion 4, ran the clean-checkout test and every command that calls the model FitFindr uses, and read the output. When the README quotes log lines, Claude copied them out of the files in `results/` and did not retype them.
+
+I did not reword the capstone criteria. Claude drafted them, Isis reviewed them three times, and I accepted them as they stood. They are Claude's wording, and they were committed before any trial ran.
+
+**Moment 1**
+
+- _What I asked for:_ I asked Claude to draft the five criteria, and Isis to review them.
+- _What came back:_ Drafts with two claims the code did not support. Criterion 4 said the tokens in the record equal the total the program prints, but the log adds both processes (640 prompt and 141 output tokens in the run Isis checked) and the program prints only its own (386 and 79). Criterion 3 said I wrote the hand counts before the trials so that I could not fit them to the log, and a smoke log with those counts already existed.
+- _What I changed:_ The token check now compares only the agent's own lines. The claim came out, and the criteria say the harness was smoke-run once and that run is not a trial. It took three reviews to get a pass.
+
+**Moment 2**
+
+- _What I asked for:_ I asked Claude to run the criteria through the milestone's self-check.
+- _What came back:_ Three of the five (criteria 3, 4 and 5) were written to pass before the fix, and criterion 4's third trial avoided the one case where the log is known to be wrong: a server killed mid-request logs 1 request for 2 sent.
+- _What I changed:_ I chose to swap that trial for `fit-card-exit` and keep the target at 3 of 3. The criterion misses in all three passes, as the note in `criteria.md` said it would before any trial ran, and I left it missed.
+
+**Moment 3**
+
+- _What I asked for:_ I asked Isis to review the test runner before it ran, because a bug in it would change a verdict and the before run could not be quietly redone.
+- _What came back:_ A pass with findings. The matching-query trials never checked that the outfit step ran, so a run with no outfit could score a pass. A stale run id could let one trial read another trial's lines. The action words in criterion 1 were narrower than the criterion.
+- _What I changed:_ Claude tightened those checks before the runs. The finding about criterion 4's token check stayed as a known limit, listed above.
+
+**Moment 4**
+
+- _What I asked for:_ Twice I had to correct the process. I asked whether Isis had reviewed the boundary changes, and Claude had planned that review and not yet sent it. Later I told Claude that Isis had finished and nothing had been watching for her.
+- _What came back:_ The first time, Claude started to send the review and I said to review at the end of the milestone. It was sent then, before any commit. The second time, Claude had launched her as a plain shell job with no notification, and from then on ran her reviews as background jobs that report back when they finish.
+- _What I changed:_ Nothing in the code. I kept the rule that a milestone is reviewed before it is committed, and I held Claude to it.
