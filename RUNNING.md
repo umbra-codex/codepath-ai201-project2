@@ -30,8 +30,8 @@ cp .env.example .env              # then paste your key after GEMINI_API_KEY=
 python test.py
 ```
 
-`python test.py` should end with `10 passed`. It makes one small model call to
-check the key.
+`python test.py` should print `10 passed, 0 failed` just above its last line. It
+makes one small model call to check the key.
 
 ### The command
 
@@ -40,9 +40,10 @@ AI201_CACHE=0 python app.py ask 'vintage graphic tee under $30'
 ```
 
 `AI201_CACHE=0` turns the answer cache off, so the run makes real model
-requests. Use single quotes around the query. The run prints the three steps,
-then the item, the outfit and the fit card. It takes a few seconds and makes two
-model requests: one in the agent's process, one inside the MCP server's.
+requests. Use single quotes around the query. The run prints the item it found,
+the outfit, the fit card and a one-line model-call tally. Add `--trace` to see
+the three steps as they run. It takes a few seconds and makes two model
+requests: one in the agent's process, one inside the MCP server's.
 
 ### Where the log goes
 
