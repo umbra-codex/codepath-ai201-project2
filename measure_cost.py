@@ -16,7 +16,7 @@ makes real model requests. Then one query that matches nothing is run once, to
 leave a failed run in the log. It is listed apart and left out of the average.
 
 The run log goes to results/ next to the summary, and both are meant to be
-committed. Both name the commit the runs were made on.
+committed. The summary names the commit the runs were made on.
 """
 
 import argparse
@@ -91,6 +91,8 @@ def main():
     parser.add_argument("--pause", type=float, default=8.0,
                         help="seconds to wait between runs, to stay under the rate limit")
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
 
     commit = _commit()  # before the runs: the log they write is not a change to the code
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
